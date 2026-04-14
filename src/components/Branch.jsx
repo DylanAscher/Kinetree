@@ -1,52 +1,47 @@
 import React from 'react';
+import { Handle, Position } from 'reactflow';
 
-// Mocking React Flow components for the preview environment
-const Position = { Top: 'top', Bottom: 'bottom' };
-const Handle = ({ type, position, style }) => (
-  <div 
-    style={{
-      ...style,
-      width: '10px',
-      height: '10px',
-      borderRadius: '50%',
-      position: 'absolute',
-      [position]: '-6px',
-      left: '50%',
-      transform: 'translateX(-50%)',
-      border: '1px solid #64748b'
-    }} 
-  />
-);
-
-export default function Branch({ data = { label: 'Sample Skill', difficulty: 'Beginner', status: 'unlocked' } }) {
-  // If we add 'mastered' logic later, we can change this color dynamically
-  const isMastered = data.status === 'mastered';
+export default function Branch({ data }) {
+  const isMastered = data?.status === 'mastered';
   
   return (
     <div style={{
-      position: 'relative',
+      position: 'relative', 
       background: isMastered ? '#064e3b' : '#1e293b',
-      color: '#f8fafc',
-      padding: '15px 20px',
-      borderRadius: '12px',
+      color: '#f8fafc', 
+      padding: '15px 30px', 
+      borderRadius: '50px', 
       border: `2px solid ${isMastered ? '#10b981' : '#3b82f6'}`,
-      boxShadow: '0 4px 6px rgba(0,0,0,0.3)',
+      boxShadow: '0 4px 10px rgba(0,0,0,0.3)', 
       textAlign: 'center',
-      minWidth: '160px'
+      minWidth: '180px', 
+      display: 'flex', 
+      flexDirection: 'column',
+      justifyContent: 'center', 
+      alignItems: 'center', 
+      cursor: 'inherit'
     }}>
-      {/* Target Handle: Where lines come IN (Top) */}
-      <Handle type="target" position={Position.Top} style={{ background: '#cbd5e1' }} />
+      {/* Target Handle: Where lines come IN (Left) */}
+      <Handle 
+        type="target" 
+        position={Position.Left} 
+        style={{ background: '#cbd5e1', width: '8px', height: '8px', border: 'none' }} 
+      />
       
       <div style={{ fontWeight: 'bold', fontSize: '14px', marginBottom: '4px' }}>
-        {data.label}
+        {data?.label || 'Skill Node'}
       </div>
       
-      <div style={{ fontSize: '10px', textTransform: 'uppercase', color: '#94a3b8' }}>
-        {data.difficulty || 'Unknown'}
+      <div style={{ fontSize: '10px', textTransform: 'uppercase', color: '#94a3b8', letterSpacing: '1px' }}>
+        {data?.difficulty || 'Unknown'}
       </div>
       
-      {/* Source Handle: Where lines go OUT (Bottom) */}
-      <Handle type="source" position={Position.Bottom} style={{ background: '#cbd5e1' }} />
+      {/* Source Handle: Where lines go OUT (Right) */}
+      <Handle 
+        type="source" 
+        position={Position.Right} 
+        style={{ background: '#cbd5e1', width: '8px', height: '8px', border: 'none' }} 
+      />
     </div>
   );
 }
