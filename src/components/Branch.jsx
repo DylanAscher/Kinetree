@@ -32,6 +32,7 @@ export default function Branch({ data }) {
         {data?.label || 'Skill Node'}
       </div>
       
+      {/* The new Difficulty Badge */}
       <div style={{ fontSize: '10px', textTransform: 'uppercase', color: '#94a3b8', letterSpacing: '1px' }}>
         {data?.difficulty || 'Unknown'}
       </div>

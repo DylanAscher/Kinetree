@@ -1,58 +1,97 @@
 import React from 'react';
 
-export default function BranchSubpage({ node, onClose }) {
+export default function BranchSubpage({ node, onClose, onMarkLearned, isUnlockable }) {
   if (!node) return null;
 
-  const { label, difficulty, description } = node.data || {};
+  const { data } = node;
+  const isMastered = data.status === 'mastered';
 
   return (
-    <div 
-      style={{
-        position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
-        backgroundColor: 'rgba(0, 0, 0, 0.65)', backdropFilter: 'blur(4px)', 
-        display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 
-      }}
-      onClick={onClose} 
-    >
-      <div 
-        style={{
-          background: '#1e293b', color: '#f8fafc', padding: '40px',
-          borderRadius: '20px', width: '600px', maxWidth: '90%',
-          boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-          position: 'relative', border: '1px solid #334155'
-        }}
-        onClick={(e) => e.stopPropagation()} 
-      >
-        <button 
-          onClick={onClose}
-          style={{
-            position: 'absolute', top: '20px', right: '20px', background: 'transparent',
-            border: 'none', color: '#94a3b8', fontSize: '20px', cursor: 'pointer',
-            padding: '5px 10px', borderRadius: '5px'
-          }}
-        >✕</button>
-
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid #334155', paddingBottom: '20px', marginBottom: '20px' }}>
-          <h2 style={{ margin: 0, fontSize: '28px', color: '#38bdf8' }}>
-            {label || 'Unknown Branch'}
+    <div style={{
+      position: 'absolute', top: 0, left: 0, width: '100vw', height: '100vh',
+      background: 'rgba(15, 23, 42, 0.8)', backdropFilter: 'blur(4px)',
+      display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100
+    }}>
+      <div style={{
+        background: '#1e293b', padding: '30px', borderRadius: '16px',
+        width: '500px', maxWidth: '90%', color: 'white',
+        border: `2px solid ${isMastered ? '#10b981' : '#38bdf8'}`,
+        boxShadow: '0 10px 25px rgba(0,0,0,0.5)'
+      }}>
+        {/* Header Section */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+          <h2 style={{ margin: 0, fontSize: '24px', color: isMastered ? '#10b981' : '#f8fafc' }}>
+            {data.label}
           </h2>
-          <span style={{ 
-            background: '#0f172a', padding: '8px 16px', borderRadius: '20px', 
-            fontSize: '14px', textTransform: 'uppercase', letterSpacing: '1px',
-            color: '#94a3b8', border: '1px solid #334155'
+          <button onClick={onClose} style={{
+            background: 'transparent', border: 'none', color: '#94a3b8', fontSize: '20px', cursor: 'pointer'
+          }}>✖</button>
+        </div>
+
+        {/* Description Section */}
+        <div style={{ marginBottom: '20px', color: '#cbd5e1', fontSize: '15px', lineHeight: '1.6' }}>
+          {data.description}
+        </div>
+
+        {/* Resources Links Section */}
+        {data.resources && data.resources.length > 0 && (
+          <div style={{ marginBottom: '30px' }}>
+            <h3 style={{ fontSize: '12px', textTransform: 'uppercase', color: '#94a3b8', marginBottom: '10px', letterSpacing: '1px' }}>
+              Recommended Learning Resources
+            </h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              {data.resources.map((res, i) => (
+                <a 
+                  key={i} 
+                  href={res.url} 
+                  target="_blank" 
+                  rel="noreferrer" 
+                  style={{
+                    display: 'block', padding: '12px 16px', background: '#0f172a',
+                    borderRadius: '8px', color: '#38bdf8', textDecoration: 'none',
+                    border: '1px solid #334155', transition: 'all 0.2s', fontSize: '14px'
+                  }}
+                  onMouseOver={(e) => e.currentTarget.style.borderColor = '#38bdf8'}
+                  onMouseOut={(e) => e.currentTarget.style.borderColor = '#334155'}
+                >
+                  🔗 {res.title}
+                </a>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Footer Action Buttons */}
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '10px', marginTop: '10px' }}>
+          <button onClick={onClose} style={{
+            padding: '10px 20px', borderRadius: '8px', border: '1px solid #475569',
+            background: 'transparent', color: '#e2e8f0', cursor: 'pointer'
           }}>
-            Difficulty: {difficulty || '???'}
-          </span>
-        </div>
-
-        <div style={{ marginBottom: '40px', lineHeight: '1.6', color: '#cbd5e1' }}>
-          <h3 style={{ fontSize: '18px', color: 'white', marginBottom: '10px' }}>Description</h3>
-          <p>{description || `A detailed description for mastering ${label || 'this topic'} is being compiled.`}</p>
-        </div>
-
-        <div style={{ background: '#0f172a', border: '2px dashed #475569', borderRadius: '12px', padding: '30px', textAlign: 'center', color: '#94a3b8' }}>
-          <div style={{ fontSize: '24px', marginBottom: '10px' }}>▶️</div>
-          <p style={{ margin: 0 }}>YouTube Video Placeholder</p>
+            Close
+          </button>
+          
+          {isMastered ? (
+            <button disabled style={{
+              padding: '10px 20px', borderRadius: '8px', border: '1px solid #064e3b',
+              background: '#064e3b', color: '#34d399', cursor: 'not-allowed', fontWeight: 'bold'
+            }}>
+              Mastered
+            </button>
+          ) : isUnlockable ? (
+            <button onClick={onMarkLearned} style={{
+              padding: '10px 20px', borderRadius: '8px', border: 'none',
+              background: '#10b981', color: 'white', cursor: 'pointer', fontWeight: 'bold'
+            }}>
+              ✓ Mark as Learned
+            </button>
+          ) : (
+            <button disabled style={{
+              padding: '10px 20px', borderRadius: '8px', border: '1px solid #475569',
+              background: '#334155', color: '#94a3b8', cursor: 'not-allowed', fontWeight: 'bold'
+            }}>
+              🔒 Learn Prerequisites First
+            </button>
+          )}
         </div>
       </div>
     </div>
