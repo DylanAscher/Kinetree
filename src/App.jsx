@@ -1,167 +1,241 @@
-import React, { useState, useMemo } from 'react';
-import ReactFlow, { useNodesState, useEdgesState, Controls } from 'reactflow';
-import 'reactflow/dist/style.css';
-import confetti from 'canvas-confetti'; 
-
-import Branch from './components/Branch'; 
-import BranchSubpage from './components/BranchSubpage'; 
+import React, { useState, useEffect } from 'react';
+import Dashboard from './components/Dashboard';
+import SkillTreeCanvas from './components/SkillTreeCanvas';
 import GeneratePopup from './components/GeneratePopup';
+import MockLogin from './components/MockLogin';
+import XpModal from './components/XpModal'; // NEW
+import { useAuth } from './components/AuthContext';
 
 export default function App() {
-  const [topic, setTopic] = useState('');
-  const [nodes, setNodes, onNodesChange] = useNodesState([]);
-  const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-  const [selectedNode, setSelectedNode] = useState(null);
+  const { user } = useAuth(); 
+  
+  const [currentView, setCurrentView] = useState('dashboard'); 
+  const [activeTree, setActiveTree] = useState(null);
+  const [savedTrees, setSavedTrees] = useState([]);
+  const [userXP, setUserXP] = useState(0);
+  const [showLogin, setShowLogin] = useState(false);
+  const [showXpModal, setShowXpModal] = useState(false); // NEW
+
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [userXP, setUserXP] = useState(0); 
+  const [generationAttempt, setGenerationAttempt] = useState(1);
+  const [currentModel, setCurrentModel] = useState("");
+  const [progressMessage, setProgressMessage] = useState("");
+  const [error, setError] = useState("");
+  const [generatingTopic, setGeneratingTopic] = useState("");
 
-  // NEW: State to control if the user can move the tree (panning)
-  const [isPaneDraggable, setIsPaneDraggable] = useState(true);
+  const [mousePos, setMousePos] = useState({ x: -1000, y: -1000 }); 
 
-  const nodeTypes = useMemo(() => ({ branch: Branch }), []);
+  useEffect(() => {
+    document.body.style.margin = '0';
+    document.body.style.padding = '0';
+    document.body.style.backgroundColor = '#050505';
+    document.body.style.color = '#ededed';
+    document.body.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
 
-  const castSpell = async (e) => {
-    e.preventDefault();
+    const handleMouseMove = (e) => {
+      setMousePos({ x: e.clientX, y: e.clientY });
+    };
+
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => window.removeEventListener('mousemove', handleMouseMove);
+  }, []);
+
+  useEffect(() => {
+    refreshSavedTrees();
+  }, [user]);
+
+  useEffect(() => {
+    const xp = localStorage.getItem('kinetree-user-xp');
+    if (xp) setUserXP(parseInt(xp, 10));
+  }, []);
+
+  useEffect(() => {
+    localStorage.setItem('kinetree-user-xp', userXP.toString());
+  }, [userXP]);
+
+  const refreshSavedTrees = () => {
+    const trees = [];
+    const currentUserId = user ? user.id : 'guest';
+
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key.startsWith('kinetree-tree-')) {
+        try {
+          const parsed = JSON.parse(localStorage.getItem(key));
+          if (parsed.userId === currentUserId) {
+            trees.push(parsed);
+          }
+        } catch (e) {}
+      }
+    }
+    
+    trees.sort((a, b) => {
+        const dateA = new Date(a.dateCreated).getTime();
+        const dateB = new Date(b.dateCreated).getTime();
+        return (isNaN(dateB) ? 0 : dateB) - (isNaN(dateA) ? 0 : dateA);
+    });
+    setSavedTrees(trees);
+  };
+
+  const handleGenerateTree = async (topic) => {
     if (!topic) return;
     setLoading(true);
     setError('');
+    setGenerationAttempt(1);
+    setCurrentModel('');
+    setProgressMessage('Establishing server connection...');
+    setGeneratingTopic(topic);
     
     try {
-      const response = await fetch(`http://localhost:8000/generate-tree?topic=${topic}`);
-      const data = await response.json();
-      
-      if (data.error) throw new Error(data.error);
+      const response = await fetch(`http://localhost:8000/generate-tree?topic=${encodeURIComponent(topic)}`);
+      if (!response.ok) throw new Error("Network response error");
 
-      const formattedNodes = (data.nodes || []).map((node) => ({
-        id: String(node.id), 
-        type: 'branch', 
-        position: { x: node.x, y: node.y }, 
-        data: { 
-            label: node.label, 
-            description: node.description,
-            resources: node.resources,
-            difficulty: node.difficulty, 
-            status: 'locked' 
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const chunks = buffer.split('\n\n');
+        buffer = chunks.pop(); 
+
+        for (const chunk of chunks) {
+            if (chunk.trim().startsWith('data: ')) {
+                try {
+                    const data = JSON.parse(chunk.substring(6));
+                    if (data.type === 'progress') {
+                        setGenerationAttempt(data.attempt);
+                        setCurrentModel(data.model);
+                        setProgressMessage(data.message);
+                    } else if (data.type === 'success') {
+                        const rawNodes = data.data.nodes || [];
+                        const formattedNodes = rawNodes.map((node) => ({
+                          id: String(node.id), 
+                          type: 'branch', 
+                          position: { x: node.x, y: node.y },
+                          data: {
+                            label: node.label, description: node.description,
+                            difficulty: node.difficulty, resource_link: node.resource_link,
+                            status: 'locked', isLeaf: true 
+                          }
+                        }));
+
+                        const formattedEdges = [];
+                        rawNodes.forEach((node) => {
+                            if (node.parent_ids) {
+                                node.parent_ids.forEach((pId) => {
+                                    formattedEdges.push({
+                                        id: `e${pId}-${node.id}`, source: String(pId), target: String(node.id), type: 'bezier', animated: true      
+                                    });
+                                });
+                            }
+                        });
+                        
+                        const newTree = {
+                          id: `kinetree-tree-${Date.now()}`, 
+                          userId: user ? user.id : 'guest', 
+                          topic: topic,
+                          dateCreated: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+                          nodes: formattedNodes,
+                          edges: formattedEdges,
+                          isNew: true 
+                        };
+
+                        localStorage.setItem(newTree.id, JSON.stringify(newTree));
+                        refreshSavedTrees();
+                        setActiveTree(newTree);
+                        setCurrentView('tree');
+                        setLoading(false);
+                    }
+                } catch (e) {}
+            }
         }
-      }));
-
-      const formattedEdges = [];
-      formattedNodes.forEach((nodeA) => {
-          formattedNodes.forEach((nodeB) => {
-              if (
-                  nodeB.position.x === nodeA.position.x + 250 && 
-                  Math.abs(nodeB.position.y - nodeA.position.y) <= 150
-              ) {
-                  formattedEdges.push({
-                      id: `e${nodeA.id}-${nodeB.id}`,
-                      source: nodeA.id,
-                      target: nodeB.id,
-                      type: 'bezier', 
-                      animated: true      
-                  });
-              }
-          });
-      });
-      
-      setNodes(formattedNodes);
-      setEdges(formattedEdges);
-      
+      }
     } catch (err) {
-      setError("Failed to reach local API. Check if your Python server is running.");
-      console.error(err);
-    } finally {
+      setError("Failed to reach local API.");
       setLoading(false);
     }
   };
 
-  const checkPrerequisites = (nodeId) => {
-    const incomingEdges = edges.filter(edge => edge.target === nodeId);
-    if (incomingEdges.length === 0) return true; 
-
-    return incomingEdges.every(edge => {
-      const sourceNode = nodes.find(n => n.id === edge.source);
-      return sourceNode?.data?.status === 'mastered';
-    });
+  const handleUpdateActiveTree = (updatedTree) => {
+    setActiveTree(updatedTree);
+    localStorage.setItem(updatedTree.id, JSON.stringify(updatedTree));
+    refreshSavedTrees(); 
   };
 
-  const handleMarkLearned = (nodeId) => {
-    const difficulty = selectedNode?.data?.difficulty;
-
-    setNodes((currentNodes) =>
-      currentNodes.map((n) => {
-        if (n.id === nodeId) {
-          return { ...n, data: { ...n.data, status: 'mastered' } };
-        }
-        return n;
-      })
-    );
-    
-    setSelectedNode((prev) => ({
-      ...prev,
-      data: { ...prev.data, status: 'mastered' }
-    }));
-
-    if (difficulty === 'Beginner') setUserXP(prev => prev + 50);
-    else if (difficulty === 'Intermediate') setUserXP(prev => prev + 100);
-    else if (difficulty === 'Advanced') setUserXP(prev => prev + 200);
-    else setUserXP(prev => prev + 100); 
-
-    confetti({
-      particleCount: 150,
-      spread: 70,
-      origin: { y: 0.6 }
-    });
+  const handleDeleteTree = (treeId) => {
+    localStorage.removeItem(treeId);
+    refreshSavedTrees();
   };
 
   return (
-    <div style={{ width: '100vw', height: '100vh', display: 'flex', flexDirection: 'column', background: '#0f172a', fontFamily: 'sans-serif' }}>
-      <div style={{ padding: '15px 30px', background: '#1e293b', borderBottom: '1px solid #334155', color: 'white', display: 'flex', justifyContent: 'space-between', alignItems: 'center', zIndex: 10 }}>
-        <h2 style={{ margin: 0, color: '#38bdf8', fontSize: '24px' }}>Iter Arbor</h2>
-        <form onSubmit={castSpell} style={{ display: 'flex', gap: '10px' }}>
-          <input 
-            type="text" 
-            value={topic} 
-            onChange={(e) => setTopic(e.target.value)} 
-            placeholder="What do you want to learn?" 
-            style={{ padding: '10px 20px', borderRadius: '30px', border: '1px solid #475569', background: '#0f172a', color: 'white', width: '350px', textAlign: 'center', outline: 'none' }} 
-          />
-          <button type="submit" style={{ padding: '10px 20px', background: '#2563eb', color: 'white', border: 'none', borderRadius: '30px', cursor: 'pointer', fontWeight: 'bold' }}>Grow Tree</button>
-        </form>
-        <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
-          <span style={{ color: '#fbbf24', fontWeight: 'bold' }}>XP: {userXP}</span>
-          <button style={{ background: '#0f172a', color: '#e2e8f0', border: '1px solid #475569', padding: '8px 20px', borderRadius: '20px' }}>User</button>
-        </div>
-      </div>
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', position: 'relative' }}>
+      
+      <div style={{
+        position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: -3,
+        backgroundColor: '#050505',
+        backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.08'/%3E%3C/svg%3E")`
+      }} />
 
-      <div style={{ flexGrow: 1, position: 'relative' }}>
-        <ReactFlow 
-          nodes={nodes} 
-          edges={edges} 
-          onNodesChange={onNodesChange} 
-          onEdgesChange={onEdgesChange} 
-          onNodeClick={(_, node) => setSelectedNode(node)} 
-          nodeTypes={nodeTypes} 
-          fitView 
-          nodesDraggable={false} 
-          // FIX: Toggle panning off when hovering a node to prevent accidental background slides
-          panOnDrag={isPaneDraggable}
-          onNodeMouseEnter={() => setIsPaneDraggable(false)}
-          onNodeMouseLeave={() => setIsPaneDraggable(true)}
-        >
-          <Controls />
-        </ReactFlow>
-      </div>
+      <div style={{
+        position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', pointerEvents: 'none', zIndex: -2,
+        backgroundImage: 'radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px)',
+        backgroundSize: '24px 24px'
+      }} />
 
-      {selectedNode && (
-        <BranchSubpage 
-          node={selectedNode} 
-          onClose={() => setSelectedNode(null)} 
-          onMarkLearned={() => handleMarkLearned(selectedNode.id)} 
-          isUnlockable={checkPrerequisites(selectedNode.id)} 
+      <div style={{
+        position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', pointerEvents: 'none', zIndex: -1,
+        backgroundImage: 'radial-gradient(rgba(255, 255, 255, 0.15) 1px, transparent 1px)',
+        backgroundSize: '24px 24px',
+        maskImage: `radial-gradient(circle 300px at ${mousePos.x}px ${mousePos.y}px, black 0%, transparent 100%)`,
+        WebkitMaskImage: `radial-gradient(circle 300px at ${mousePos.x}px ${mousePos.y}px, black 0%, transparent 100%)`
+      }} />
+
+      {currentView === 'dashboard' && (
+        <Dashboard 
+          savedTrees={savedTrees} 
+          userXP={userXP} 
+          onOpenTree={(tree) => { setActiveTree(tree); setCurrentView('tree'); }} 
+          onGenerate={handleGenerateTree} 
+          onDeleteTree={handleDeleteTree} 
+          onOpenLogin={() => setShowLogin(true)} 
+          onOpenXpStats={() => setShowXpModal(true)} // NEW
         />
       )}
-      {loading && <GeneratePopup />}
+      
+      {currentView === 'tree' && activeTree && (
+        <SkillTreeCanvas 
+          treeData={activeTree} 
+          userXP={userXP}
+          setUserXP={setUserXP}
+          onBack={() => { setActiveTree(null); setCurrentView('dashboard'); }}
+          onSave={handleUpdateActiveTree}
+          onOpenLogin={() => setShowLogin(true)}
+          onOpenXpStats={() => setShowXpModal(true)} // NEW
+        />
+      )}
+
+      {loading && (
+        <GeneratePopup 
+            topic={generatingTopic}
+            attempt={generationAttempt}
+            model={currentModel}
+            progressMessage={progressMessage}
+        />
+      )}
+
+      {showLogin && <MockLogin onClose={() => setShowLogin(false)} />}
+
+      {/* NEW: XP Modal */}
+      {showXpModal && (
+        <XpModal 
+          savedTrees={savedTrees}
+          userXP={userXP}
+          onClose={() => setShowXpModal(false)}
+        />
+      )}
     </div>
   );
 }

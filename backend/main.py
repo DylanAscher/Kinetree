@@ -1,126 +1,128 @@
-import os
-import logging
+import asyncio
 import json
-from fastapi import FastAPI, HTTPException
+import os
+from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
 from google import genai
 from google.genai import types
+from pydantic import BaseModel
 from dotenv import load_dotenv
+import uuid # Add this to your imports at the top
 
-# 1. Setup Logging
-logging.basicConfig(level=logging.INFO, format='%(levelname)s: %(message)s')
-logger = logging.getLogger(__name__)
-
-# Load environment variables
 load_dotenv()
-api_key = os.getenv("GEMINI_API_KEY")
-if not api_key:
-    logger.error("GEMINI_API_KEY is missing from .env file!")
-
-# 2. Initialize FastAPI and Gemini Client
 app = FastAPI()
-client = genai.Client(api_key=api_key)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# 3. Define Pydantic Models for Structured Output
-class Resource(BaseModel):
-    title: str = Field(description="The exact title of the article, video, or tool.")
-    url: str = Field(description="A highly relevant, real URL to learn this skill.")
+client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
 
+# 1. Add resource_link to the Pydantic model
 class Node(BaseModel):
-    id: str = Field(description="A unique string ID for this node (e.g., '1', '2a')")
-    label: str = Field(description="The short title of the skill")
-    description: str = Field(description="A 2-sentence explanation of why this skill matters")
-    difficulty: str = Field(description="Rank as 'Beginner', 'Intermediate', or 'Advanced'") # <-- NEW
-    x: int = Field(description="The exact X coordinate provided in the prompt instructions")
-    y: int = Field(description="The exact Y coordinate provided in the prompt instructions")
-    resources: list[Resource] = Field(description="Exactly 1-2 highly relevant links to learn this skill")
+    id: str
+    label: str
+    description: str
+    difficulty: str
+    x: int
+    y: int
+    parent_ids: list[str]
+    resource_link: str # NEW
 
 class SkillTree(BaseModel):
-    nodes: list[Node] = Field(description="Exactly 24 nodes forming the complete skill tree")
+    nodes: list[Node]
 
-tree_cache = {}
-
-# 4. The Generation Endpoint
 @app.get("/generate-tree")
-async def generate_skill_tree(topic: str):
-    logger.info(f"Received request to generate tree for: {topic}")
-    
-    # Return cached version if we just searched this
-    if topic.lower() in tree_cache:
-        logger.info(f"Returning cached tree for {topic}!")
-        return tree_cache[topic.lower()] # Already saved as a dict now!
-
-    # The Bulletproof Mega-Batch Prompt
-    prompt = f"""
-    You are an expert curriculum designer. The user wants to learn about '{topic}'.
-    Your task is to create a comprehensive, logical skill tree consisting of EXACTLY 24 nodes. 
-    
-    CRITICAL INSTRUCTION: You must strictly map your 24 nodes to the exact X and Y coordinates listed below to form an 8-column diamond. Do not calculate your own spacing. Do not deviate from this list. 
-
-    - Node 1 (Foundation): x: 0, y: 300
-    - Node 2: x: 250, y: 225
-    - Node 3: x: 250, y: 375
-    - Node 4: x: 500, y: 150
-    - Node 5: x: 500, y: 300
-    - Node 6: x: 500, y: 450
-    - Node 7: x: 750, y: 75
-    - Node 8: x: 750, y: 225
-    - Node 9: x: 750, y: 375
-    - Node 10: x: 750, y: 525
-    - Node 11: x: 1000, y: 75
-    - Node 12: x: 1000, y: 225
-    - Node 13: x: 1000, y: 375
-    - Node 14: x: 1000, y: 525
-    - Node 15: x: 1250, y: 75
-    - Node 16: x: 1250, y: 225
-    - Node 17: x: 1250, y: 375
-    - Node 18: x: 1250, y: 525
-    - Node 19: x: 1500, y: 150
-    - Node 20: x: 1500, y: 300
-    - Node 21: x: 1500, y: 450
-    - Node 22 (Mastery): x: 1750, y: 150
-    - Node 23 (Mastery): x: 1750, y: 300
-    - Node 24 (Mastery): x: 1750, y: 450
-
-    Additional Rules:
-    1. Do NOT use placeholder data (e.g., "Example Title", "example.com"). Provide real, actionable topics and URLs.
-    2. Every node must have a unique ID (e.g., "node-1" through "node-24").
-    3. You must return EXACTLY 24 nodes. 
-    4. Provide exactly 1-2 resources per node.
-    5. Assign a 'Beginner', 'Intermediate', or 'Advanced' difficulty to each node based on its position in the tree.
-    """
-
-    try:
-        logger.info(f"Sending mega-batch request to Gemini 3.1 Flash...")
-        response = client.models.generate_content(
-            model='gemini-3.1-flash-lite-preview',
-            contents=prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json",
-                response_schema=SkillTree,
-                temperature=0.4, 
-            ),
-        )
+async def generate_tree(topic: str):
+    async def event_generator():
+        # Updated to first Gemini 3.1 Flash lite preview
+        current_model = 'gemini-3.1-flash-lite-preview'
         
-        logger.info("Successfully received strictly formatted JSON from Gemini.")
+        yield f"data: {json.dumps({'type': 'progress', 'model': current_model, 'attempt': 1, 'message': 'Forming your skill tree...'})}\n\n"
         
-        # FIX: Parse it into a Python dictionary immediately
-        tree_data = json.loads(response.text)
-        
-        # Save the dictionary to the cache, NOT the raw text string
-        tree_cache[topic.lower()] = tree_data
-        
-        return tree_data
+        try:
+            # The X-axis MUST step by exactly 250 to satisfy your App.jsx edge generation logic
+            # The Y-axis difference MUST be <= 150 between connecting columns
+            prompt = f"""
+            Create a highly detailed, comprehensive skill tree for learning: {topic}.
+            Depending on the topic, the tree should generate a certain amount of nodes.
+            1. For broad topics (e.g., "Programming"), generate around 20-35 nodes.
+            2. For more specific topics (e.g., "Python Web Development"), generate around 10-20 nodes.
+            3. For niche topics (e.g., "Flask Framework"), generate around 7-10 nodes.
+            
+            CONTENT DEPTH: Break the topic down into professional-grade sub-skills.
+            
+            RESOURCES: For every node, provide a 'resource_link'. This MUST be a YouTube search URL formatted exactly like this, replacing spaces with +: 
+            https://www.youtube.com/results?search_query=learn+[Specific+Skill]+[Topic]
+            
+            STRICT LAYOUT & CONNECTIONS:
+            I do not have visual reasoning, so you MUST follow these mathematical rules to prevent line intersections:
+            1. 'parent_ids': Explicitly map the edges. Starting nodes have [].
+            2. X-Coordinates: A node's X coordinate MUST be exactly 450px greater than the X coordinate of its parent. Never skip columns, and never place a child node backwards. (e.g., Start is 0. Its children are 450. Their children are 900).
+            3. Y-Coordinates: Separate concurrent nodes in the same column by at least 125px vertically.
+            
+            Ensure the node IDs are simple strings (e.g., "1", "2").
+            """
 
-    except Exception as e:
-        logger.error(f"Error calling Gemini: {str(e)}")
-        raise HTTPException(status_code=500, detail="Failed to generate skill tree.")
+            response = client.models.generate_content(
+                model=current_model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=SkillTree,
+                    temperature=0.2, 
+                ),
+            )
+            
+            tree_data = json.loads(response.text)
+            yield f"data: {json.dumps({'type': 'success', 'data': tree_data})}\n\n"
+
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': f'Fatal Error: {str(e)}'})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+@app.get("/expand-tree")
+async def expand_tree(topic: str, parent_id: str, start_x: int, start_y: int):
+    async def event_generator():
+        current_model = 'gemini-3.1-flash-lite-preview'
+        yield f"data: {json.dumps({'type': 'progress', 'message': f'Expanding branch: {topic}...' })}\n\n"
+        
+        try:
+            prompt = f"""
+            Expand the skill tree for the sub-topic: "{topic}".
+            Generate exactly 3 to 5 new nodes that dive deeper into this specific skill.
+            
+            RESOURCES: For every node, provide a 'resource_link'. This MUST be a YouTube search URL formatted exactly like this, replacing spaces with +: 
+            https://www.youtube.com/results?search_query=learn+[Specific+Skill]+[Topic]
+            
+            STRICT LAYOUT & CONNECTIONS:
+            1. 'parent_ids': The very first node(s) in this new sequence MUST strictly include "{parent_id}" in their parent_ids list. Subsequent nodes should connect to each other logically.
+            2. X-Coordinates: The immediate children MUST start at exactly X: {start_x + 350}. Any further columns step forward by 350px.
+            3. Y-Coordinates: Center them around Y: {start_y}, separating concurrent nodes in the same column by at least 200px vertically.
+            
+            Ensure the node IDs are simple strings. Give them a unique prefix like "exp-{uuid.uuid4().hex[:6]}-" to avoid overlapping with existing nodes.
+            """
+
+            response = client.models.generate_content(
+                model=current_model,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    response_schema=SkillTree,
+                    temperature=0.3, 
+                ),
+            )
+            
+            tree_data = json.loads(response.text)
+            yield f"data: {json.dumps({'type': 'success', 'data': tree_data})}\n\n"
+
+        except Exception as e:
+            yield f"data: {json.dumps({'type': 'error', 'message': f'Fatal Error: {str(e)}'})}\n\n"
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
