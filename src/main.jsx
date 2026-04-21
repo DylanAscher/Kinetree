@@ -1,12 +1,12 @@
-import React from 'react'
-import ReactDOM from 'react-dom/client'
-import App from './App.jsx'
-import { AuthProvider } from './components/AuthContext.jsx' // IMPORT THIS
+import React from 'react';
+import ReactDOM from 'react-dom/client';
+import App from './App.jsx';
+import { AuthProvider } from './context/AuthContext'; // Connecting the brain
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    <AuthProvider>  {/* WRAP YOUR APP */}
+    <AuthProvider>
       <App />
     </AuthProvider>
-  </React.StrictMode>,
-)
+  </React.StrictMode>
+);

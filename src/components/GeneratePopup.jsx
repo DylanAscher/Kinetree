@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 
-export default function GeneratePopup({ topic, attempt, model, progressMessage }) {
+export default function GeneratePopup({ topic, model, progressMessage }) {
   const [dots, setDots] = useState('');
 
   useEffect(() => {
@@ -22,7 +22,7 @@ export default function GeneratePopup({ topic, attempt, model, progressMessage }
         style={{
           background: '#0a0a0a', color: '#ededed', padding: '40px',
           borderRadius: '6px', width: '450px', maxWidth: '90%',
-          border: '1px solid #444'
+          border: '1px solid #444', fontFamily: '-apple-system, BlinkMacSystemFont, "Inter", sans-serif'
         }}
       >
         <h2 style={{ fontSize: '18px', margin: '0 0 25px 0', fontWeight: '400', letterSpacing: '-0.5px' }}>
@@ -30,26 +30,17 @@ export default function GeneratePopup({ topic, attempt, model, progressMessage }
         </h2>
 
         <div style={{ 
-            background: '#111', 
-            padding: '20px', 
-            borderRadius: '4px', 
-            textAlign: 'left',
-            border: '1px solid #222',
-            fontFamily: 'monospace'
+            background: '#111', padding: '20px', borderRadius: '4px', textAlign: 'left', border: '1px solid #222'
         }}>
-          <p style={{ margin: '0 0 10px 0', color: '#666', fontSize: '12px' }}>
+          <p style={{ margin: '0 0 10px 0', color: '#666', fontSize: '12px', fontWeight: 'bold', textTransform: 'uppercase' }}>
             Generation Progress
           </p>
-          
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <p style={{ margin: 0, color: '#a3a3a3', fontSize: '13px' }}>
-              <span style={{ color: '#555' }}>Status:</span> {progressMessage || "Initiating..."}
+            <p style={{ margin: 0, color: '#a3a3a3', fontSize: '14px' }}>
+              <span style={{ color: '#555', fontWeight: 'bold' }}>Status:</span> {progressMessage || "Initiating..."}
             </p>
-            <p style={{ margin: 0, color: '#a3a3a3', fontSize: '13px' }}>
-              <span style={{ color: '#555' }}>Model:</span> {model || "Awaiting Allocation"}
-            </p>
-            <p style={{ margin: 0, color: '#a3a3a3', fontSize: '13px' }}>
-              <span style={{ color: '#555' }}>Attempt:</span> {attempt}
+            <p style={{ margin: 0, color: '#a3a3a3', fontSize: '14px' }}>
+              <span style={{ color: '#555', fontWeight: 'bold' }}>Model:</span> {model || "Awaiting Node"}
             </p>
           </div>
         </div>

@@ -2,22 +2,29 @@ import React, { useState, useEffect } from 'react';
 import Dashboard from './components/Dashboard';
 import SkillTreeCanvas from './components/SkillTreeCanvas';
 import GeneratePopup from './components/GeneratePopup';
-import MockLogin from './components/MockLogin';
-import XpModal from './components/XpModal'; // NEW
-import { useAuth } from './components/AuthContext';
+import AuthModal from './context/AuthModal'; 
+import Leaderboard from './components/Leaderboard'; 
+import DialogModal from './components/DialogModal'; 
+import LandingPage from './components/LandingPage';
+import Pricing from './components/Pricing'; 
+import { useAuth, supabase } from './context/AuthContext'; 
 
 export default function App() {
-  const { user } = useAuth(); 
+  const { user, profile } = useAuth(); 
   
   const [currentView, setCurrentView] = useState('dashboard'); 
   const [activeTree, setActiveTree] = useState(null);
   const [savedTrees, setSavedTrees] = useState([]);
   const [userXP, setUserXP] = useState(0);
+  
   const [showLogin, setShowLogin] = useState(false);
-  const [showXpModal, setShowXpModal] = useState(false); // NEW
+  const [authMessage, setAuthMessage] = useState(''); 
+  const [showLeaderboard, setShowLeaderboard] = useState(false); 
+  const [showPricing, setShowPricing] = useState(false); 
+  
+  const [dialogConfig, setDialogConfig] = useState({ isOpen: false });
 
   const [loading, setLoading] = useState(false);
-  const [generationAttempt, setGenerationAttempt] = useState(1);
   const [currentModel, setCurrentModel] = useState("");
   const [progressMessage, setProgressMessage] = useState("");
   const [error, setError] = useState("");
@@ -31,63 +38,139 @@ export default function App() {
     document.body.style.backgroundColor = '#050505';
     document.body.style.color = '#ededed';
     document.body.style.fontFamily = '-apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, Helvetica, Arial, sans-serif';
+    document.body.style.overflow = 'auto'; 
+    document.documentElement.style.overflow = 'auto';
 
-    const handleMouseMove = (e) => {
-      setMousePos({ x: e.clientX, y: e.clientY });
-    };
-
+    const handleMouseMove = (e) => setMousePos({ x: e.clientX, y: e.clientY });
     window.addEventListener('mousemove', handleMouseMove);
     return () => window.removeEventListener('mousemove', handleMouseMove);
   }, []);
 
   useEffect(() => {
+    let absoluteXP = 0;
+    savedTrees.forEach(tree => {
+      const nodes = typeof tree.nodes === 'string' ? JSON.parse(tree.nodes) : (tree.nodes || []);
+      const masteredCount = nodes.filter(n => n.data?.status === 'mastered').length;
+      absoluteXP += masteredCount * 50;
+    });
+    setUserXP(absoluteXP);
+
+    if (user && user.id !== 'guest') {
+      supabase.from('profiles').update({ xp: absoluteXP }).eq('id', user.id).then();
+    }
+  }, [savedTrees, user]);
+
+  useEffect(() => {
     refreshSavedTrees();
   }, [user]);
 
-  useEffect(() => {
-    const xp = localStorage.getItem('kinetree-user-xp');
-    if (xp) setUserXP(parseInt(xp, 10));
-  }, []);
-
-  useEffect(() => {
-    localStorage.setItem('kinetree-user-xp', userXP.toString());
-  }, [userXP]);
-
-  const refreshSavedTrees = () => {
-    const trees = [];
-    const currentUserId = user ? user.id : 'guest';
-
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key.startsWith('kinetree-tree-')) {
-        try {
-          const parsed = JSON.parse(localStorage.getItem(key));
-          if (parsed.userId === currentUserId) {
-            trees.push(parsed);
-          }
-        } catch (e) {}
-      }
+  const refreshSavedTrees = async () => {
+    if (!user || user.id === 'guest') {
+      setSavedTrees([]);
+      return;
     }
-    
-    trees.sort((a, b) => {
-        const dateA = new Date(a.dateCreated).getTime();
-        const dateB = new Date(b.dateCreated).getTime();
-        return (isNaN(dateB) ? 0 : dateB) - (isNaN(dateA) ? 0 : dateA);
-    });
-    setSavedTrees(trees);
+    const { data, error } = await supabase.from('trees').select('*').eq('user_id', user.id).order('created_at', { ascending: false });
+    if (!error && data) {
+      const formattedTrees = data.map(dbTree => {
+        const nodes = typeof dbTree.nodes === 'string' ? JSON.parse(dbTree.nodes) : dbTree.nodes;
+        const edges = typeof dbTree.edges === 'string' ? JSON.parse(dbTree.edges) : dbTree.edges;
+        return {
+          ...dbTree, nodes, edges,
+          dateCreated: new Date(dbTree.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        };
+      });
+      setSavedTrees(formattedTrees);
+    }
   };
 
-  const handleGenerateTree = async (topic) => {
+  const handleGenerateTree = async (topic, skillLevel) => {
     if (!topic) return;
+    if (!user || user.id === 'guest') {
+      setAuthMessage("An account is required to generate and save a new Skill Tree.");
+      setShowLogin(true);
+      return;
+    }
+
+    // --- SaaS TIER LOGIC ---
+    const userTier = profile?.tier?.toLowerCase() || 'free'; 
+    const treeCount = savedTrees.length;
+
+    if (skillLevel === 'Full Progression' && userTier !== 'unlimited') {
+      setShowPricing(true);
+      return;
+    }
+    if (userTier === 'free' && treeCount >= 3) {
+      setShowPricing(true);
+      return; 
+    }
+    if (userTier === 'pro' && treeCount >= 15) {
+      setShowPricing(true);
+      return;
+    }
+    // -----------------------
+
+    const { data: existingTrees } = await supabase.from('trees').select('*').ilike('topic', topic);
+
+    let exactMatch = null;
+    if (existingTrees && existingTrees.length > 0) {
+      exactMatch = existingTrees.find(tree => {
+        const nodes = typeof tree.nodes === 'string' ? JSON.parse(tree.nodes) : tree.nodes;
+        return nodes && nodes[0] && nodes[0].data?.difficulty?.toLowerCase() === skillLevel.toLowerCase();
+      });
+    }
+
+    if (exactMatch) {
+      setDialogConfig({
+        isOpen: true,
+        title: "Identical Tree Found",
+        message: `An identical ${skillLevel} skill tree for "${exactMatch.topic}" already exists in the archives. Would you like to instantly clone the existing tree for a fresh start, or generate a brand new one?`,
+        confirmText: "Clone Existing",
+        cancelText: "Generate New",
+        onConfirm: () => { setDialogConfig({ isOpen: false }); performClone(exactMatch); },
+        onCancel: () => { setDialogConfig({ isOpen: false }); performGenerate(topic, skillLevel); }
+      });
+    } else {
+      performGenerate(topic, skillLevel);
+    }
+  };
+
+  const performClone = async (existingTree) => {
+    setLoading(true);
+    setProgressMessage('Cloning existing tree...');
+    setGeneratingTopic(existingTree.topic);
+    
+    const nodes = typeof existingTree.nodes === 'string' ? JSON.parse(existingTree.nodes) : existingTree.nodes;
+    const edges = typeof existingTree.edges === 'string' ? JSON.parse(existingTree.edges) : existingTree.edges;
+    
+    const freshNodes = nodes.map(n => ({ ...n, data: { ...n.data, status: 'locked' } }));
+    
+    const newTreeData = { user_id: user.id, topic: existingTree.topic, nodes: freshNodes, edges: edges };
+    const { data: insertedTree, error } = await supabase.from('trees').insert([newTreeData]).select().single();
+
+    if (!error && insertedTree) {
+        const formattedTreeToOpen = {
+            ...insertedTree, nodes: freshNodes, edges: edges,
+            dateCreated: new Date(insertedTree.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
+            isNew: true 
+        };
+        setSavedTrees(prev => [formattedTreeToOpen, ...prev]);
+        setActiveTree(formattedTreeToOpen);
+        setCurrentView('tree');
+    }
+    setLoading(false);
+  };
+
+  const performGenerate = async (topic, skillLevel) => {
     setLoading(true);
     setError('');
-    setGenerationAttempt(1);
     setCurrentModel('');
     setProgressMessage('Establishing server connection...');
     setGeneratingTopic(topic);
     
     try {
-      const response = await fetch(`http://localhost:8000/generate-tree?topic=${encodeURIComponent(topic)}`);
+      const enhancedTopic = `${topic} (Target Audience: ${skillLevel})`;
+      const response = await fetch(`http://localhost:8000/generate-tree?topic=${encodeURIComponent(enhancedTopic)}`);
+      
       if (!response.ok) throw new Error("Network response error");
 
       const reader = response.body.getReader();
@@ -106,50 +189,60 @@ export default function App() {
                 try {
                     const data = JSON.parse(chunk.substring(6));
                     if (data.type === 'progress') {
-                        setGenerationAttempt(data.attempt);
                         setCurrentModel(data.model);
                         setProgressMessage(data.message);
                     } else if (data.type === 'success') {
                         const rawNodes = data.data.nodes || [];
-                        const formattedNodes = rawNodes.map((node) => ({
-                          id: String(node.id), 
-                          type: 'branch', 
-                          position: { x: node.x, y: node.y },
-                          data: {
-                            label: node.label, description: node.description,
-                            difficulty: node.difficulty, resource_link: node.resource_link,
-                            status: 'locked', isLeaf: true 
+                        const nodesToCheck = [];
+                        const yOffsets = [0, 110, -110, 220, -220];
+                        
+                        const formattedNodes = rawNodes.map((node) => {
+                          let currentX = node.x;
+                          let currentY = 0;
+                          for (let offset of yOffsets) {
+                              let overlapping = false;
+                              for (let existingNode of nodesToCheck) {
+                                  let dx = Math.abs(existingNode.position.x - currentX);
+                                  let dy = Math.abs(existingNode.position.y - offset);
+                                  if (dx < 200 && dy < 100) { overlapping = true; break; }
+                              }
+                              if (!overlapping) { currentY = offset; break; }
                           }
-                        }));
+                          const resolvedNode = {
+                            id: String(node.id), type: 'branch', position: { x: currentX, y: currentY },
+                            data: { label: node.label, description: node.description, difficulty: node.difficulty, resource_link: node.resource_link, status: 'locked', isLeaf: true }
+                          };
+                          nodesToCheck.push(resolvedNode);
+                          return resolvedNode;
+                        });
 
                         const formattedEdges = [];
                         rawNodes.forEach((node) => {
                             if (node.parent_ids) {
                                 node.parent_ids.forEach((pId) => {
                                     formattedEdges.push({
-                                        id: `e${pId}-${node.id}`, source: String(pId), target: String(node.id), type: 'bezier', animated: true      
+                                        id: `e${pId}-${node.id}`, source: String(pId), target: String(node.id), type: 'default', animated: true,
+                                        style: { stroke: '#ffffff', strokeWidth: 2 } 
                                     });
                                 });
                             }
                         });
                         
-                        const newTree = {
-                          id: `kinetree-tree-${Date.now()}`, 
-                          userId: user ? user.id : 'guest', 
-                          topic: topic,
-                          dateCreated: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-                          nodes: formattedNodes,
-                          edges: formattedEdges,
-                          isNew: true 
+                        const newTreeData = { user_id: user.id, topic: topic, nodes: formattedNodes, edges: formattedEdges };
+                        const { data: insertedTree } = await supabase.from('trees').insert([newTreeData]).select().single();
+                        const treeToOpen = insertedTree || { id: `temp-${Date.now()}`, ...newTreeData, created_at: new Date().toISOString() };
+
+                        const formattedTreeToOpen = {
+                          ...treeToOpen, nodes: formattedNodes, edges: formattedEdges,
+                          dateCreated: new Date(treeToOpen.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
                         };
 
-                        localStorage.setItem(newTree.id, JSON.stringify(newTree));
-                        refreshSavedTrees();
-                        setActiveTree(newTree);
-                        setCurrentView('tree');
+                        setSavedTrees(prev => [formattedTreeToOpen, ...prev]);
+                        setActiveTree(formattedTreeToOpen);
+                        setCurrentView('tree'); 
                         setLoading(false);
                     }
-                } catch (e) {}
+                } catch (e) { }
             }
         }
       }
@@ -159,83 +252,64 @@ export default function App() {
     }
   };
 
-  const handleUpdateActiveTree = (updatedTree) => {
+  const handleUpdateActiveTree = async (updatedTree) => {
     setActiveTree(updatedTree);
-    localStorage.setItem(updatedTree.id, JSON.stringify(updatedTree));
-    refreshSavedTrees(); 
+    setSavedTrees(prev => prev.map(t => t.id === updatedTree.id ? updatedTree : t));
+
+    if (user && user.id !== 'guest') {
+      await supabase.from('trees').update({ nodes: updatedTree.nodes, edges: updatedTree.edges }).eq('id', updatedTree.id);
+    }
   };
 
-  const handleDeleteTree = (treeId) => {
-    localStorage.removeItem(treeId);
-    refreshSavedTrees();
+  const handleDeleteTree = async (treeId) => {
+    setSavedTrees(prev => prev.filter(t => t.id !== treeId));
+    if (user && user.id !== 'guest') {
+      await supabase.from('trees').delete().eq('id', treeId);
+    }
   };
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column', position: 'relative' }}>
       
-      <div style={{
-        position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: -3,
-        backgroundColor: '#050505',
-        backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.08'/%3E%3C/svg%3E")`
-      }} />
-
-      <div style={{
-        position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', pointerEvents: 'none', zIndex: -2,
-        backgroundImage: 'radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px)',
-        backgroundSize: '24px 24px'
-      }} />
-
-      <div style={{
-        position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', pointerEvents: 'none', zIndex: -1,
-        backgroundImage: 'radial-gradient(rgba(255, 255, 255, 0.15) 1px, transparent 1px)',
-        backgroundSize: '24px 24px',
-        maskImage: `radial-gradient(circle 300px at ${mousePos.x}px ${mousePos.y}px, black 0%, transparent 100%)`,
-        WebkitMaskImage: `radial-gradient(circle 300px at ${mousePos.x}px ${mousePos.y}px, black 0%, transparent 100%)`
-      }} />
+      <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', zIndex: -3, backgroundColor: '#050505', backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)' opacity='0.08'/%3E%3C/svg%3E")` }} />
+      <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', pointerEvents: 'none', zIndex: -2, backgroundImage: 'radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
+      <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', pointerEvents: 'none', zIndex: -1, backgroundImage: 'radial-gradient(rgba(255, 255, 255, 0.15) 1px, transparent 1px)', backgroundSize: '24px 24px', maskImage: `radial-gradient(circle 300px at ${mousePos.x}px ${mousePos.y}px, black 0%, transparent 100%)`, WebkitMaskImage: `radial-gradient(circle 300px at ${mousePos.x}px ${mousePos.y}px, black 0%, transparent 100%)` }} />
 
       {currentView === 'dashboard' && (
-        <Dashboard 
-          savedTrees={savedTrees} 
-          userXP={userXP} 
-          onOpenTree={(tree) => { setActiveTree(tree); setCurrentView('tree'); }} 
-          onGenerate={handleGenerateTree} 
-          onDeleteTree={handleDeleteTree} 
-          onOpenLogin={() => setShowLogin(true)} 
-          onOpenXpStats={() => setShowXpModal(true)} // NEW
-        />
+        user && user.id !== 'guest' ? (
+          <Dashboard 
+            savedTrees={savedTrees} userXP={userXP} 
+            onOpenTree={(tree) => { setActiveTree(tree); setCurrentView('tree'); }} 
+            onGenerate={handleGenerateTree} onDeleteTree={handleDeleteTree} 
+            onOpenLogin={(msg) => { setAuthMessage(typeof msg === 'string' ? msg : ""); setShowLogin(true); }} 
+            onOpenLeaderboard={() => setShowLeaderboard(true)}
+            onOpenPricing={() => setShowPricing(true)} 
+          />
+        ) : (
+          <LandingPage 
+            onOpenLogin={(msg) => { setAuthMessage(typeof msg === 'string' ? msg : ""); setShowLogin(true); }} 
+            onOpenPricing={() => setShowPricing(true)} 
+          />
+        )
       )}
       
       {currentView === 'tree' && activeTree && (
         <SkillTreeCanvas 
-          treeData={activeTree} 
-          userXP={userXP}
-          setUserXP={setUserXP}
+          treeData={activeTree} userXP={userXP}
           onBack={() => { setActiveTree(null); setCurrentView('dashboard'); }}
           onSave={handleUpdateActiveTree}
-          onOpenLogin={() => setShowLogin(true)}
-          onOpenXpStats={() => setShowXpModal(true)} // NEW
+          onOpenLogin={(msg) => { setAuthMessage(typeof msg === 'string' ? msg : ""); setShowLogin(true); }}
+          onOpenLeaderboard={() => setShowLeaderboard(true)}
+          onOpenPricing={() => setShowPricing(true)}
         />
       )}
 
-      {loading && (
-        <GeneratePopup 
-            topic={generatingTopic}
-            attempt={generationAttempt}
-            model={currentModel}
-            progressMessage={progressMessage}
-        />
-      )}
-
-      {showLogin && <MockLogin onClose={() => setShowLogin(false)} />}
-
-      {/* NEW: XP Modal */}
-      {showXpModal && (
-        <XpModal 
-          savedTrees={savedTrees}
-          userXP={userXP}
-          onClose={() => setShowXpModal(false)}
-        />
-      )}
+      {loading && <GeneratePopup topic={generatingTopic} model={currentModel} progressMessage={progressMessage} />}
+      {showLogin && <AuthModal message={authMessage} onClose={() => setShowLogin(false)} />}
+      {showLeaderboard && <Leaderboard userXP={userXP} onClose={() => setShowLeaderboard(false)} />}
+      {showPricing && <Pricing onClose={() => setShowPricing(false)} onOpenLogin={(msg) => { setAuthMessage(msg); setShowLogin(true); }} />}
+      
+      <DialogModal {...dialogConfig} />
     </div>
   );
 }

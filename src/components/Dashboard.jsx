@@ -1,169 +1,164 @@
 import React, { useState } from 'react';
-import { useAuth } from './AuthContext';
+import { useAuth } from '../context/AuthContext';
+import DialogModal from './DialogModal';
 
-export default function Dashboard({ savedTrees, userXP, onOpenTree, onGenerate, onDeleteTree, onOpenLogin, onOpenXpStats }) {
-  const [topic, setTopic] = useState('');
-  const [treeToDelete, setTreeToDelete] = useState(null);
+export default function Dashboard({ savedTrees = [], userXP, onOpenTree, onOpenLogin, onGenerate, onDeleteTree, onOpenLeaderboard, onOpenPricing }) {
+  const { user, profile, logout } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
+  const [newTopic, setNewTopic] = useState('');
+  const [skillLevel, setSkillLevel] = useState('Beginner'); 
   
-  const { user, logout } = useAuth();
+  const [deleteId, setDeleteId] = useState(null);
 
-  const calculateProgress = (nodes) => {
-    if (!nodes || nodes.length === 0) return 0;
-    const mastered = nodes.filter(n => n.data?.status === 'mastered').length;
-    return Math.round((mastered / nodes.length) * 100);
-  };
-
-  const handleGenerate = (e) => {
-    e.preventDefault();
-    if (topic.trim()) {
-      onGenerate(topic.trim());
-      setTopic(''); 
-    }
-  };
-
-  const confirmDelete = (e, tree) => {
-    e.stopPropagation();
-    setTreeToDelete(tree);
-  };
-
-  const executeDelete = () => {
-    if (treeToDelete) {
-      onDeleteTree(treeToDelete.id);
-      setTreeToDelete(null);
-    }
-  };
-
-  const filteredTrees = savedTrees.filter(tree =>
-    tree.topic?.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredTrees = (savedTrees || []).filter(tree => 
+    tree.topic.toLowerCase().includes(searchTerm.toLowerCase())
   );
 
-  return (
-    <div style={{ padding: '20px 40px 40px 40px', color: '#ededed', maxWidth: '1100px', margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
-      
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #222', paddingBottom: '20px' }}>
-        <h1 style={{ fontSize: '28px', margin: 0, fontWeight: '600', letterSpacing: '-0.5px' }}>Kinetree</h1>
-        
-        <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-          
-          {/* UPDATED: XP Button */}
-          <button 
-            onClick={onOpenXpStats}
-            style={{ fontSize: '14px', fontFamily: 'monospace', color: '#a3a3a3', background: '#111', padding: '8px 16px', borderRadius: '4px', border: '1px solid #333', cursor: 'pointer', transition: 'all 0.2s' }}
-            onMouseEnter={(e) => { e.target.style.background = '#222'; e.target.style.color = '#ededed'; }}
-            onMouseLeave={(e) => { e.target.style.background = '#111'; e.target.style.color = '#a3a3a3'; }}
-          >
-            XP: {userXP}
-          </button>
+  const isLoggedIn = user && user.id !== 'guest';
 
-          {user ? (
-            <button 
-              onClick={logout} 
-              style={{ fontSize: '14px', fontFamily: 'monospace', color: '#ededed', background: 'transparent', padding: '8px 16px', borderRadius: '4px', border: '1px solid #333', cursor: 'pointer', transition: 'all 0.2s' }}
-              onMouseEnter={(e) => { e.target.style.background = '#ededed'; e.target.style.color = '#000'; }}
-              onMouseLeave={(e) => { e.target.style.background = 'transparent'; e.target.style.color = '#ededed'; }}
-            >
-              {user.email} (Log out)
-            </button>
+  const handleGenerateClick = () => {
+    if (!isLoggedIn) {
+      onOpenLogin("An account is required to generate and save your own skill trees.");
+    } else {
+      onGenerate(newTopic, skillLevel); 
+    }
+  };
+
+  return (
+    <div style={{ 
+      padding: '20px 50px 50px 50px', maxWidth: '1400px', margin: '0 auto', 
+      width: '100%', minHeight: '100vh', boxSizing: 'border-box', 
+      color: '#fff', display: 'flex', flexDirection: 'column'
+    }}>
+      
+      <DialogModal 
+        isOpen={!!deleteId}
+        title="Delete Skill Tree"
+        message="Are you sure you want to permanently delete this skill tree? This action cannot be undone."
+        confirmText="Delete"
+        cancelText="Cancel"
+        isDanger={true}
+        onConfirm={() => { onDeleteTree(deleteId); setDeleteId(null); }}
+        onCancel={() => setDeleteId(null)}
+      />
+
+      <header style={{ flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
+        <div>
+          <h1 style={{ fontSize: '36px', fontWeight: '900', margin: 0, letterSpacing: '1px', textTransform: 'uppercase' }}>KINETREE</h1>
+          <p style={{ color: '#888', fontSize: '16px', margin: '5px 0 0 0' }}>Adaptive Learning Infrastructure</p>
+        </div>
+
+        <div style={{ display: 'flex', gap: '20px', alignItems: 'center' }}>
+          {isLoggedIn ? (
+            <>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px', background: '#111', padding: '6px 14px', borderRadius: '50px', border: '1px solid #333' }}>
+                 <span style={{ color: '#888', fontWeight: 'bold', fontSize: '12px' }}>XP</span>
+                 <span style={{ fontFamily: 'monospace', fontWeight: 'bold', color: '#ededed' }}>{userXP}</span>
+              </div>
+              
+              <button onClick={onOpenLeaderboard} style={{ background: '#ededed', color: '#000', border: 'none', padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', transition: 'transform 0.2s' }} onMouseEnter={e => e.target.style.transform = 'scale(1.05)'} onMouseLeave={e => e.target.style.transform = 'scale(1)'}>
+                 Rankings
+              </button>
+
+              <button onClick={onOpenPricing} style={{ background: 'linear-gradient(45deg, #4caf50, #2e7d32)', color: '#fff', border: 'none', padding: '8px 16px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', transition: 'transform 0.2s', boxShadow: '0 0 15px rgba(76,175,80,0.3)' }} onMouseEnter={e => e.target.style.transform = 'scale(1.05)'} onMouseLeave={e => e.target.style.transform = 'scale(1)'}>
+                 Upgrade
+              </button>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '15px' }}>
+                <span style={{ fontSize: '16px', fontWeight: '500' }}>{profile?.username || user.email}</span>
+                <button onClick={logout} style={{ background: 'none', border: '1px solid #ff4444', color: '#ff4444', padding: '8px 16px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>
+                  Log Out
+                </button>
+              </div>
+            </>
           ) : (
-            <button 
-              onClick={onOpenLogin} 
-              style={{ fontSize: '14px', fontFamily: 'monospace', fontWeight: 'bold', color: '#000', background: '#ededed', padding: '8px 24px', borderRadius: '4px', border: '1px solid #ededed', cursor: 'pointer', transition: 'opacity 0.2s' }}
-              onMouseEnter={(e) => e.target.style.opacity = '0.8'}
-              onMouseLeave={(e) => e.target.style.opacity = '1'}
-            >
-              Log In
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+              <span style={{ fontSize: '16px', color: '#aaa' }}>Log in to save your progress</span>
+              <button onClick={() => onOpenLogin()} style={{ background: '#fff', color: '#000', border: 'none', padding: '10px 24px', borderRadius: '6px', fontWeight: 'bold', cursor: 'pointer', fontSize: '16px' }}>
+                Log In
+              </button>
+            </div>
           )}
+        </div>
+      </header>
+
+      {/* FIXED OFFCENTER: Added boxSizing: 'border-box' so padding stays internal */}
+      <div style={{ flexShrink: 0, background: 'rgba(17, 17, 17, 0.7)', border: '1px solid #333', padding: '60px', borderRadius: '16px', marginBottom: '40px', textAlign: 'center', width: '100%', boxSizing: 'border-box', margin: '0 auto 40px auto', backdropFilter: 'blur(10px)' }}>
+        <h2 style={{ margin: '0 0 35px 0', fontSize: '32px' }}>What do you want to learn today?</h2>
+        <div style={{ display: 'flex', gap: '20px', justifyContent: 'center' }}>
+          
+          <input 
+            type="text" 
+            placeholder="e.g., Python, Video Editing, Cooking..."
+            value={newTopic}
+            onChange={(e) => setNewTopic(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleGenerateClick()} 
+            style={{ flex: 1, padding: '20px 30px', background: '#0a0a0a', border: '1px solid #444', color: '#fff', borderRadius: '10px', fontSize: '22px', outline: 'none' }}
+          />
+
+          <select 
+            value={skillLevel}
+            onChange={(e) => setSkillLevel(e.target.value)}
+            style={{ padding: '20px', background: '#0a0a0a', border: '1px solid #444', color: '#fff', borderRadius: '10px', fontSize: '20px', outline: 'none', cursor: 'pointer' }}
+          >
+            <option value="Beginner">Beginner</option>
+            <option value="Intermediate">Intermediate</option>
+            <option value="Advanced">Advanced</option>
+            <option value="Full Progression" style={{ color: '#4caf50', fontWeight: 'bold' }}>Full Progression (Unlimited)</option>
+          </select>
+
+          <button 
+            onClick={handleGenerateClick}
+            style={{ padding: '20px 45px', background: '#fff', color: '#000', border: 'none', borderRadius: '10px', fontWeight: 'bold', cursor: 'pointer', fontSize: '22px' }}
+          >
+            Generate Tree
+          </button>
         </div>
       </div>
 
-      <div style={{ background: '#0a0a0a', padding: '25px', borderRadius: '8px', marginBottom: '40px', border: '1px solid #222' }}>
-        <h2 style={{ marginTop: 0, marginBottom: '15px', fontSize: '16px', fontWeight: '500', color: '#888' }}>Grow a New Skill Tree</h2>
-        <form onSubmit={handleGenerate} style={{ display: 'flex', gap: '10px' }}>
-          <input
-            type="text"
-            placeholder="What do you want to learn? (e.g., Python, System Design, 3D Modeling)"
-            value={topic}
-            onChange={(e) => setTopic(e.target.value)}
-            style={{ flexGrow: 1, padding: '12px 16px', borderRadius: '4px', border: '1px solid #333', background: '#111', color: '#fff', fontSize: '15px', outline: 'none' }}
-            onFocus={(e) => e.target.style.borderColor = '#666'}
-            onBlur={(e) => e.target.style.borderColor = '#333'}
-          />
-          <button type="submit" style={{ padding: '0 24px', borderRadius: '4px', border: '1px solid #ededed', background: '#ededed', color: '#000', fontSize: '14px', fontWeight: 'bold', cursor: 'pointer' }}>
-            Generate
-          </button>
-        </form>
-      </div>
-
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
-        <h2 style={{ margin: 0, fontSize: '20px', fontWeight: '500' }}>Your Saved Trees</h2>
-        <input
-          type="text"
-          placeholder="Search trees..."
-          value={searchTerm}
-          onChange={(e) => setSearchTerm(e.target.value)}
-          style={{ padding: '8px 12px', borderRadius: '4px', border: '1px solid #333', background: '#111', color: '#fff', fontSize: '14px', width: '250px', outline: 'none' }}
-          onFocus={(e) => e.target.style.borderColor = '#666'}
-          onBlur={(e) => e.target.style.borderColor = '#333'}
+      <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #333', paddingBottom: '15px' }}>
+        <h3 style={{ margin: 0, fontSize: '22px' }}>Saved Trees</h3>
+        <input 
+          type="text" placeholder="Search trees..."
+          value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)}
+          style={{ padding: '10px 20px', background: '#111', border: '1px solid #333', color: '#fff', borderRadius: '6px', width: '300px', fontSize: '16px', outline: 'none' }}
         />
       </div>
 
-      {filteredTrees.length === 0 ? (
-        <p style={{ color: '#666', fontSize: '15px', textAlign: 'center', marginTop: '60px', fontFamily: 'monospace' }}>
-          {savedTrees.length === 0 ? "You haven't generated any trees on this account yet." : "No matching trees found."}
-        </p>
-      ) : (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '15px' }}>
-          {filteredTrees.map(tree => {
-            const progress = calculateProgress(tree.nodes);
-            return (
-              <div
-                key={tree.id}
-                onClick={() => onOpenTree(tree)}
-                style={{ background: '#0a0a0a', borderRadius: '6px', padding: '20px', cursor: 'pointer', border: '1px solid #222', transition: 'border-color 0.2s', position: 'relative' }}
-                onMouseEnter={(e) => e.currentTarget.style.borderColor = '#555'}
-                onMouseLeave={(e) => e.currentTarget.style.borderColor = '#222'}
-              >
-                <button
-                  onClick={(e) => confirmDelete(e, tree)}
-                  style={{ position: 'absolute', top: '15px', right: '15px', background: 'transparent', border: 'none', color: '#666', fontSize: '16px', cursor: 'pointer', transition: 'color 0.2s' }}
-                  onMouseEnter={(e) => e.target.style.color = '#ff4444'}
-                  onMouseLeave={(e) => e.target.style.color = '#666'}
-                >
-                  ✕
-                </button>
-                <h3 style={{ margin: '0 0 5px 0', fontSize: '18px', fontWeight: '500', paddingRight: '20px' }}>{tree.topic}</h3>
-                
-                <div style={{ fontSize: '12px', color: '#666', marginBottom: '20px', fontFamily: 'monospace' }}>
-                  Generated: {tree.dateCreated}
-                </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '30px', paddingBottom: '50px' }}>
+        {filteredTrees.length > 0 ? filteredTrees.map(tree => {
+          const totalNodes = tree.nodes?.length || 0;
+          const masteredNodes = tree.nodes?.filter(n => n.data?.status === 'mastered').length || 0;
+          const progress = totalNodes === 0 ? 0 : Math.round((masteredNodes / totalNodes) * 100);
 
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', color: '#888', fontSize: '12px', marginBottom: '8px', fontFamily: 'monospace' }}>
+          return (
+            <div key={tree.id} onClick={() => onOpenTree(tree)} style={{ background: 'rgba(17, 17, 17, 0.7)', border: '1px solid #333', padding: '30px', borderRadius: '12px', cursor: 'pointer', transition: 'all 0.2s ease', backdropFilter: 'blur(5px)', display: 'flex', flexDirection: 'column', justifyContent: 'space-between', minHeight: '180px' }}>
+              <h3 style={{ margin: '0 0 15px 0', fontSize: '22px', fontWeight: 'bold' }}>{tree.topic}</h3>
+              <div style={{ marginTop: 'auto', marginBottom: '20px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px', color: '#888', marginBottom: '8px' }}>
                   <span>Progress</span>
-                  <span style={{ color: '#ededed' }}>{progress}%</span>
+                  <span>{progress}%</span>
                 </div>
-                <div style={{ width: '100%', background: '#222', borderRadius: '2px', height: '4px', overflow: 'hidden' }}>
-                  <div style={{ width: `${progress}%`, background: '#ededed', height: '100%', transition: 'width 0.5s ease' }}></div>
+                <div style={{ width: '100%', height: '6px', background: '#222', borderRadius: '3px', overflow: 'hidden' }}>
+                  <div style={{ width: `${progress}%`, height: '100%', background: '#4caf50' }} />
                 </div>
               </div>
-            )
-          })}
-        </div>
-      )}
-
-      {treeToDelete && (
-        <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', background: 'rgba(0, 0, 0, 0.8)', display: 'flex', justifyContent: 'center', alignItems: 'center', zIndex: 100 }}>
-          <div style={{ background: '#0a0a0a', padding: '30px', borderRadius: '6px', border: '1px solid #ff4444', width: '400px', maxWidth: '90%' }}>
-            <h3 style={{ margin: '0 0 10px 0', fontSize: '18px', fontWeight: '500' }}>Delete "{treeToDelete.topic}"?</h3>
-            <p style={{ color: '#888', fontSize: '14px', marginBottom: '25px' }}>This action is permanent and cannot be undone.</p>
-            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
-              <button onClick={() => setTreeToDelete(null)} style={{ padding: '8px 16px', background: 'transparent', color: '#ededed', border: '1px solid #333', borderRadius: '4px', cursor: 'pointer', fontSize: '13px' }}>Cancel</button>
-              <button onClick={executeDelete} style={{ padding: '8px 16px', background: '#ff4444', color: '#fff', border: '1px solid #ff4444', borderRadius: '4px', cursor: 'pointer', fontSize: '13px', fontWeight: 'bold' }}>Delete Permanently</button>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <span style={{ fontSize: '14px', color: '#666' }}>Created: {tree.dateCreated || (tree.created_at ? new Date(tree.created_at).toLocaleDateString() : 'Unknown')}</span>
+                <div style={{ display: 'flex', gap: '15px', alignItems: 'center' }}>
+                  <button onClick={(e) => { e.stopPropagation(); setDeleteId(tree.id); }} style={{ background: 'none', border: 'none', color: '#ff4444', fontSize: '14px', fontWeight: 'bold', cursor: 'pointer', padding: 0 }}>Delete</button>
+                  <span style={{ fontSize: '14px', color: '#444', fontWeight: 'bold' }}>View Tree →</span>
+                </div>
+              </div>
             </div>
+          );
+        }) : (
+          <div style={{ width: '100%', gridColumn: '1 / -1', textAlign: 'center', padding: '60px 0', color: '#666' }}>
+            <p style={{ fontSize: '18px' }}>No skill trees found.</p>
           </div>
-        </div>
-      )}
+        )}
+      </div>
+
     </div>
   );
 }
