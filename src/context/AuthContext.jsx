@@ -1,18 +1,9 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-// 1. PULL VARIABLES
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
-// 2. TELEMETRY CHECK (Open your Browser Console to see this)
-console.log("--- KINETREE SUPABASE TELEMETRY ---");
-console.log("URL FOUND:", supabaseUrl || "❌ MISSING (UNDEFINED)");
-console.log("KEY FOUND:", supabaseAnonKey ? "✅ EXISTS" : "❌ MISSING");
-
-// 3. DEFUSE THE CRASH
-// We only initialize if the variables exist. If not, we create a 'null' client 
-// so the app doesn't explode, then we show an error message in the UI later.
 export const supabase = (supabaseUrl && supabaseAnonKey) 
   ? createClient(supabaseUrl, supabaseAnonKey) 
   : null;
@@ -59,17 +50,41 @@ export const AuthProvider = ({ children }) => {
     if (!error) setProfile(data);
   };
 
+  // Helper to update the public profile (username, full_name, etc.)
+  const updateProfile = async (updates) => {
+    if (!user) return { error: 'Not logged in' };
+    const { data, error } = await supabase
+      .from('profiles')
+      .update(updates)
+      .eq('id', user.id)
+      .select()
+      .single();
+    if (!error) setProfile(data);
+    return { data, error };
+  };
+
+  // Helper to update Auth credentials (email, password)
+  const updateAuth = async (attributes) => {
+    return await supabase.auth.updateUser(attributes);
+  };
+
+  const addXP = async (amount) => {
+    if (!user || !profile) return;
+    const newXP = (profile.xp || 0) + amount;
+    setProfile({ ...profile, xp: newXP }); 
+    await supabase.from('profiles').update({ xp: newXP }).eq('id', user.id);
+  };
+
   const login = (email, password) => supabase.auth.signInWithPassword({ email, password });
   const logout = () => supabase.auth.signOut();
 
   return (
-    <AuthContext.Provider value={{ user, profile, login, logout, loading, supabase }}>
+    <AuthContext.Provider value={{ user, profile, setProfile, addXP, updateProfile, updateAuth, login, logout, loading, supabase }}>
       {!supabase ? (
         <div style={{ background: '#000', color: '#ff4444', height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'monospace', textAlign: 'center' }}>
           <div>
             <h1>ERROR: ENV_KEYS_NOT_FOUND</h1>
             <p>Vite is unable to read your .env file.</p>
-            <p style={{ color: '#555' }}>Check console for telemetry logs.</p>
           </div>
         </div>
       ) : !loading && children}

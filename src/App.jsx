@@ -7,15 +7,18 @@ import Leaderboard from './components/Leaderboard';
 import DialogModal from './components/DialogModal'; 
 import LandingPage from './components/LandingPage';
 import Pricing from './components/Pricing'; 
+import UserInfo from './components/UserInfo'; // NEW IMPORT
 import { useAuth, supabase } from './context/AuthContext'; 
 
 export default function App() {
-  const { user, profile } = useAuth(); 
+  const { user, profile, addXP } = useAuth(); 
+  const userXP = profile?.xp || 0;
+
+  const isLoggedIn = user && user.id !== 'guest';
   
   const [currentView, setCurrentView] = useState('dashboard'); 
   const [activeTree, setActiveTree] = useState(null);
   const [savedTrees, setSavedTrees] = useState([]);
-  const [userXP, setUserXP] = useState(0);
   
   const [showLogin, setShowLogin] = useState(false);
   const [authMessage, setAuthMessage] = useState(''); 
@@ -47,20 +50,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    let absoluteXP = 0;
-    savedTrees.forEach(tree => {
-      const nodes = typeof tree.nodes === 'string' ? JSON.parse(tree.nodes) : (tree.nodes || []);
-      const masteredCount = nodes.filter(n => n.data?.status === 'mastered').length;
-      absoluteXP += masteredCount * 50;
-    });
-    setUserXP(absoluteXP);
-
-    if (user && user.id !== 'guest') {
-      supabase.from('profiles').update({ xp: absoluteXP }).eq('id', user.id).then();
-    }
-  }, [savedTrees, user]);
-
-  useEffect(() => {
     refreshSavedTrees();
   }, [user]);
 
@@ -83,56 +72,90 @@ export default function App() {
     }
   };
 
-  const handleGenerateTree = async (topic, skillLevel) => {
-    if (!topic) return;
-    if (!user || user.id === 'guest') {
-      setAuthMessage("An account is required to generate and save a new Skill Tree.");
-      setShowLogin(true);
-      return;
-    }
+  const handleGenerateTree = (topic) => {
+  setGeneratingTopic(true); // Opens GeneratePopup
+  const eventSource = new EventSource(`http://localhost:8000/generate-tree?topic=${encodeURIComponent(topic)}`);
+  eventSource.onmessage = (event) => {
+    try {
+      const parsedData = JSON.parse(event.data);
 
-    // --- SaaS TIER LOGIC ---
-    const userTier = profile?.tier?.toLowerCase() || 'free'; 
-    const treeCount = savedTrees.length;
+      if (parsedData.type === 'progress') {
+        setProgressMessage(parsedData.message);
+        setCurrentModel(parsedData.model || currentModel);
+      }
+      else if (parsedData.type === 'success') {
+            
+            // 1. Pre-calculate the edges so Supabase has them
+            const generatedNodes = parsedData.data.nodes;
+            const generatedEdges = [];
+            
+            generatedNodes.forEach(node => {
+              if (node.parent_ids && Array.isArray(node.parent_ids)) {
+                node.parent_ids.forEach(parentId => {
+                  generatedEdges.push({
+                    id: `e-${parentId}-${node.id}`,
+                    source: String(parentId),
+                    target: String(node.id),
+                    animated: true,
+                    style: { stroke: '#333' }
+                  });
+                });
+              }
+            });
 
-    if (skillLevel === 'Full Progression' && userTier !== 'unlimited') {
-      setShowPricing(true);
-      return;
-    }
-    if (userTier === 'free' && treeCount >= 3) {
-      setShowPricing(true);
-      return; 
-    }
-    if (userTier === 'pro' && treeCount >= 15) {
-      setShowPricing(true);
-      return;
-    }
-    // -----------------------
+            // 2. Build the full tree object
+            const newTree = {
+              id: crypto.randomUUID(),
+              topic: topic,
+              date: new Date().toLocaleDateString(),
+              nodes: generatedNodes,
+              edges: generatedEdges, // <-- We now have edges!
+            };
 
-    const { data: existingTrees } = await supabase.from('trees').select('*').ilike('topic', topic);
+            const updatedTrees = [newTree, ...savedTrees];
+            setSavedTrees(updatedTrees);
+            localStorage.setItem('kinetree_saved', JSON.stringify(updatedTrees));
 
-    let exactMatch = null;
-    if (existingTrees && existingTrees.length > 0) {
-      exactMatch = existingTrees.find(tree => {
-        const nodes = typeof tree.nodes === 'string' ? JSON.parse(tree.nodes) : tree.nodes;
-        return nodes && nodes[0] && nodes[0].data?.difficulty?.toLowerCase() === skillLevel.toLowerCase();
-      });
-    }
+            if (isLoggedIn) {
+              // 3. Send EVERYTHING to Supabase to satisfy the strict schema
+              supabase.from('trees').insert([{ 
+                id: newTree.id, 
+                user_id: user.id, 
+                topic: newTree.topic, 
+                data: newTree,
+                nodes: newTree.nodes,
+                edges: newTree.edges // <-- Sent to Database!
+              }])
+              .then(({error}) => { if(error) console.error("Supabase Save Error:", error); });
+            }
 
-    if (exactMatch) {
-      setDialogConfig({
-        isOpen: true,
-        title: "Identical Tree Found",
-        message: `An identical ${skillLevel} skill tree for "${exactMatch.topic}" already exists in the archives. Would you like to instantly clone the existing tree for a fresh start, or generate a brand new one?`,
-        confirmText: "Clone Existing",
-        cancelText: "Generate New",
-        onConfirm: () => { setDialogConfig({ isOpen: false }); performClone(exactMatch); },
-        onCancel: () => { setDialogConfig({ isOpen: false }); performGenerate(topic, skillLevel); }
-      });
-    } else {
-      performGenerate(topic, skillLevel);
+            setActiveTree(newTree); 
+            setCurrentView('tree'); 
+            setLoading(false); 
+            eventSource.close(); 
+      } else if (parsedData.type === 'error') {
+        console.error("Backend Error:", parsedData.message);
+        alert(`Generation failed: ${parsedData.message}`);
+        setLoading(false);
+        eventSource.close();
+      }
+    } catch (err) {
+      // THIS PREVENTS FUTURE BRICKING!
+      console.error("Failed to process server response:", err);
+      alert("The AI returned an invalid response. Please try again.");
+      setLoading(false); 
+      eventSource.close();
     }
   };
+
+  eventSource.onerror = () => {
+    // --- THE FIX: Catch network/connection errors ---
+    console.error("EventSource failed.");
+    alert("Lost connection to the server.");
+    setGeneratingTopic  (false); // Force close the popup!
+    eventSource.close();    // Kill connection
+  };
+};
 
   const performClone = async (existingTree) => {
     setLoading(true);
@@ -275,7 +298,17 @@ export default function App() {
       <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', pointerEvents: 'none', zIndex: -2, backgroundImage: 'radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
       <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', pointerEvents: 'none', zIndex: -1, backgroundImage: 'radial-gradient(rgba(255, 255, 255, 0.15) 1px, transparent 1px)', backgroundSize: '24px 24px', maskImage: `radial-gradient(circle 300px at ${mousePos.x}px ${mousePos.y}px, black 0%, transparent 100%)`, WebkitMaskImage: `radial-gradient(circle 300px at ${mousePos.x}px ${mousePos.y}px, black 0%, transparent 100%)` }} />
 
-      {currentView === 'dashboard' && (
+      {/* NEW ROUTING LOGIC */}
+      {currentView === 'userInfo' ? (
+        <UserInfo onBack={() => setCurrentView('dashboard')} onOpenPricing={() => setShowPricing(true)} />
+      ) : currentView === 'landing' ? (
+        <LandingPage 
+          onOpenLogin={(msg) => { setAuthMessage(typeof msg === 'string' ? msg : ""); setShowLogin(true); }} 
+          onOpenPricing={() => setShowPricing(true)} 
+          onGoToDashboard={() => setCurrentView('dashboard')}
+          isLoggedIn={user && user.id !== 'guest'}
+        />
+      ) : currentView === 'dashboard' ? (
         user && user.id !== 'guest' ? (
           <Dashboard 
             savedTrees={savedTrees} userXP={userXP} 
@@ -284,14 +317,18 @@ export default function App() {
             onOpenLogin={(msg) => { setAuthMessage(typeof msg === 'string' ? msg : ""); setShowLogin(true); }} 
             onOpenLeaderboard={() => setShowLeaderboard(true)}
             onOpenPricing={() => setShowPricing(true)} 
+            onOpenUserInfo={() => setCurrentView('userInfo')}
+            onOpenLanding={() => setCurrentView('landing')} 
           />
         ) : (
           <LandingPage 
             onOpenLogin={(msg) => { setAuthMessage(typeof msg === 'string' ? msg : ""); setShowLogin(true); }} 
             onOpenPricing={() => setShowPricing(true)} 
+            onGoToDashboard={() => setCurrentView('dashboard')}
+            isLoggedIn={false}
           />
         )
-      )}
+      ) : null}
       
       {currentView === 'tree' && activeTree && (
         <SkillTreeCanvas 
@@ -301,6 +338,7 @@ export default function App() {
           onOpenLogin={(msg) => { setAuthMessage(typeof msg === 'string' ? msg : ""); setShowLogin(true); }}
           onOpenLeaderboard={() => setShowLeaderboard(true)}
           onOpenPricing={() => setShowPricing(true)}
+          onOpenUserInfo={() => setCurrentView('userInfo')}
         />
       )}
 

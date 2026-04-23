@@ -28,8 +28,6 @@ class Node(BaseModel):
     label: str
     description: str
     difficulty: str
-    x: int
-    y: int
     parent_ids: list[str]
     resource_link: str # Ensuring the AI populates this with a real URL
 
@@ -54,18 +52,10 @@ async def generate_tree(topic: str):
             2. 'description': Detail exactly WHAT they are learning and WHY it matters. Do not use vague filler. 
             3. 'resource_link': You MUST provide a REAL, highly-applicable URL to a free resource (Wikipedia, official docs, Coursera, W3Schools, freeCodeCamp, specific high-quality text tutorials). Do NOT give a YouTube search link. Give an actual applicable site link.
             
-            STRICT LAYOUT & CONNECTIONS (24 Nodes Total):
-            Build a diamond structure across exactly 8 columns (X-coordinates).
-            Column 1 (X: 0): 1 Root Node
-            Column 2 (X: 350): 2 Nodes
-            Column 3 (X: 700): 3 Nodes
-            Column 4 (X: 1050): 4 Nodes
-            Column 5 (X: 1400): 4 Nodes
-            Column 6 (X: 1750): 4 Nodes
-            Column 7 (X: 2100): 3 Nodes
-            Column 8 (X: 2450): 3 Terminal Nodes
-            
-            Y-Coordinates: Center them around Y=0. Separate concurrent nodes in the same column by at least 150px vertically (e.g., Y: -150, 0, 150).
+            STRICT LAYOUT & CONNECTIONS:
+            1. 'parent_ids': The very first root node for this topic MUST have an empty list [] for its parent_ids.
+            2. For the rest of the tree, ensure node `id`s are simple, sequential strings (e.g., "1", "2", "3"). This is CRITICAL so you can accurately link them in 'parent_ids' without making a typo. 
+            3. Focus entirely on logical progression.
             
             Ensure logical progression using the 'parent_ids' array. Give nodes a simple string ID like "node1", "node2".
             """
@@ -80,7 +70,16 @@ async def generate_tree(topic: str):
                 ),
             )
             
-            tree_data = json.loads(response.text)
+            raw_text = response.text.strip()
+            if raw_text.startswith("```json"):
+                raw_text = raw_text[7:]
+            if raw_text.endswith("```"):
+                raw_text = raw_text[:-3]
+            raw_text = raw_text.strip()
+            
+            tree_data = json.loads(raw_text)
+            # --------------------------------------------------------
+
             yield f"data: {json.dumps({'type': 'success', 'data': tree_data})}\n\n"
 
         except Exception as e:
