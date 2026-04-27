@@ -73,7 +73,9 @@ export default function App() {
   };
 
   const handleGenerateTree = (topic) => {
-  setGeneratingTopic(true); // Opens GeneratePopup
+  setGeneratingTopic(topic);
+  setLoading(true);
+  setProgressMessage("Initializing Cognitive Parsing...");
   const eventSource = new EventSource(`http://localhost:8000/generate-tree?topic=${encodeURIComponent(topic)}`);
   eventSource.onmessage = (event) => {
     try {

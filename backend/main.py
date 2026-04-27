@@ -44,22 +44,33 @@ async def generate_tree(topic: str):
         try:
             # Overhauled Prompt for Hyper-Specificity and Real URLs
             prompt = f"""
-            You are Kinetree, an advanced cognitive map generator.
-            Create a highly specific, actionable skill tree for the topic: "{topic}".
-            
-            CRITICAL INSTRUCTIONS FOR CONTENT:
-            1. 'label': Make it hyper-specific (e.g., "React useEffect Hook" NOT just "React Hooks").
-            2. 'description': Detail exactly WHAT they are learning and WHY it matters. Do not use vague filler. 
-            3. 'resource_link': You MUST provide a REAL, highly-applicable URL to a free resource (Wikipedia, official docs, Coursera, W3Schools, freeCodeCamp, specific high-quality text tutorials). Do NOT give a YouTube search link. Give an actual applicable site link.
-            
-            STRICT LAYOUT & CONNECTIONS:
-            1. 'parent_ids': The very first root node for this topic MUST have an empty list [] for its parent_ids.
-            2. For the rest of the tree, ensure node `id`s are simple, sequential strings (e.g., "1", "2", "3"). This is CRITICAL so you can accurately link them in 'parent_ids' without making a typo. 
-            3. Focus entirely on logical progression.
-            
-            Ensure logical progression using the 'parent_ids' array. Give nodes a simple string ID like "node1", "node2".
-            """
+            ROLE: You are an expert curriculum designer and subject matter expert for: {topic}.
 
+            TASK: Generate a comprehensive, high-quality skill tree for a user wanting to learn {topic} from scratch to mastery. 
+            The entire curriculum MUST be specifically about {topic}. Do NOT mention generic coding or Python unless {topic} is actually about Python.
+
+            CONTENT CRITERIA:
+            1. 'label': Concise names (2-4 words max).
+            2. 'description': A clear, 2-sentence explanation of what the user will learn in this branch.
+            3. 'difficulty': Assign 'Beginner', 'Intermediate', or 'Advanced'.
+            4. 'resource_link': Provide a direct, valid URL to high-quality external learning materials (e.g., Wikipedia, official documentation for {topic}, or industry-standard tutorials). 
+
+            STRUCTURE AND CONNECTION RULES:
+            You must strictly organize the nodes into 5 sequential learning columns to ensure a clean Left-to-Right user flow:
+            - Column 1 (Basics of {topic}): 1-2 nodes
+            - Column 2 (Fundamentals): 2-4 nodes
+            - Column 3 (Intermediate Techniques): 3-5 nodes
+            - Column 4 (Advanced Concepts): 2-4 nodes
+            - Column 5 (Mastery & Projects): 1-2 nodes
+
+            CRITICAL ARCHITECTURE RULES:
+            - A node in Column [X] can ONLY have parent_ids from Column [X-1]. 
+            - NEVER connect nodes to themselves, never connect backwards, and never skip a column.
+            - Use simple, unique string IDs (e.g., "basics-1", "advanced-2").
+            - The very first nodes in Column 1 must have an empty list [] for 'parent_ids'.
+
+            TOPIC ANCHOR: The subject is {topic}. Every single node must relate to {topic}.
+            """
             response = client.models.generate_content(
                 model=current_model,
                 contents=prompt,

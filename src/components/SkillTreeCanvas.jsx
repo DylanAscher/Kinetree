@@ -1,49 +1,42 @@
 import React, { useState, useCallback, useEffect, useRef } from 'react';
-import ReactFlow, { Controls, useNodesState, useEdgesState } from 'reactflow';
+import ReactFlow, { Controls, useNodesState, useEdgesState, MarkerType } from 'reactflow';
 import dagre from 'dagre';
 import 'reactflow/dist/style.css';
 import Branch from './Branch';
 import BranchSubpage from './BranchSubpage';
 import { useAuth } from '../context/AuthContext';
 
-// 1. DEFINED OUTSIDE THE COMPONENT TO FIX THE WARNING
 const nodeTypes = { branch: Branch };
-const nodeWidth = 220;
-const nodeHeight = 120;
-
-// 2. BULLETPROOF LAYOUT FUNCTION
+const nodeWidth = 220; // Your actual CSS visual width
+const nodeHeight = 120; // Your actual CSS visual height
 const getLayoutedElements = (nodes, edges) => {
-  const dagreGraph = new dagre.graphlib.Graph();
-  dagreGraph.setDefaultEdgeLabel(() => ({}));
-  dagreGraph.setGraph({ rankdir: 'LR', nodesep: 100, ranksep: 350 });
+  const dagreGraph = new dagre.graphlib.Graph();
+  dagreGraph.setDefaultEdgeLabel(() => ({}));
+  
+  // Crush the external padding down to the absolute minimum
+  dagreGraph.setGraph({ rankdir: 'LR', nodesep: 15, ranksep: 30 });
 
-  nodes.forEach((node) => {
-    dagreGraph.setNode(String(node.id), { width: nodeWidth, height: nodeHeight });
-  });
+  nodes.forEach((node) => {
+    // THE HACK: Feed Dagre a smaller bounding box than the actual nodes.
+    // This forces the algorithm to pack them tightly together, mimicking the Landing Page!
+    dagreGraph.setNode(String(node.id), { width: 250, height: 130 });
+  });
 
-  edges.forEach((edge) => {
-    dagreGraph.setEdge(String(edge.source), String(edge.target));
-  });
+  edges.forEach((edge) => {
+    dagreGraph.setEdge(String(edge.source), String(edge.target));
+  });
 
-  dagre.layout(dagreGraph);
+  dagre.layout(dagreGraph);
 
-  return nodes.map((node) => {
-    const pos = dagreGraph.node(String(node.id));
-    
-    // BULLETPROOF FALLBACK: The '?.' means if pos doesn't exist, it safely defaults to 0
-    const x = pos?.x ?? 0;
-    const y = pos?.y ?? 0;
-
-    return {
-      ...node,
-      targetPosition: 'left',
-      sourcePosition: 'right',
-      position: {
-        x: x - nodeWidth / 2,
-        y: y - nodeHeight / 2,
-      },
-    };
-  });
+  return nodes.map((node) => {
+    const pos = dagreGraph.node(String(node.id));
+    return {
+      ...node,
+      position: { x: pos?.x || 0, y: pos?.y || 0 },
+      targetPosition: 'left',
+      sourcePosition: 'right',
+    };
+  });
 };
 
 export default function SkillTreeCanvas({ treeData, userXP, onBack, onSave, onOpenLogin, onOpenLeaderboard, onOpenPricing, onOpenUserInfo }) {
@@ -55,6 +48,8 @@ export default function SkillTreeCanvas({ treeData, userXP, onBack, onSave, onOp
   const [isExpanding, setIsExpanding] = useState(false);
   const [initialFitDone, setInitialFitDone] = useState(false);
   const [isPaneDraggable, setIsPaneDraggable] = useState(true);
+  const [currentColIndex, setCurrentColIndex] = useState(0);
+  const [isZoomed, setIsZoomed] = useState(false);
 
   const { user, profile, logout, addXP } = useAuth();
   const isLoggedIn = user && user.id !== 'guest';
@@ -128,31 +123,53 @@ export default function SkillTreeCanvas({ treeData, userXP, onBack, onSave, onOp
     });
   }, [handleCenter, checkIsUnlockable]);
 
+  // DEFAULT VIEW ON LOAD
+  useEffect(() => {
+    if (rfInstance && nodes.length > 0) {
+      setTimeout(() => {
+        rfInstance.fitView({ padding: 0.5, duration: 800 });
+      }, 100);
+    }
+  }, [rfInstance, nodes]);
+
   // CRITICAL FIX 1: Hydrate nodes/edges securely without triggering an infinite React loop
   useEffect(() => {
-    if (treeData && treeData.nodes) {
-        const initialEdges = [];
-        treeData.nodes.forEach(node => {
-            if (node.parent_ids) {
-                node.parent_ids.forEach(parentId => {
-                    initialEdges.push({
-                        id: `e-${parentId}-${node.id}`,
-                        source: String(parentId),
-                        target: String(node.id),
-                        animated: true,
-                        style: { stroke: '#333' }
-                    });
-                });
-            }
-        });
+    if (treeData && treeData.nodes) {
+        const initialEdges = [];
+        
+        treeData.nodes.forEach(node => {
+            // Bulletproof parent extraction: Hunt down the parent ID no matter where it's nested
+            let parents = [];
+            if (node.parent_ids) parents = node.parent_ids;
+            else if (node.data?.parent_ids) parents = node.data.parent_ids;
+            else if (node.parent_id) parents = [node.parent_id];
+            else if (node.data?.parent_id) parents = [node.data.parent_id];
+            
+            if (Array.isArray(parents)) {
+                parents.forEach(parentId => {
+                    // Prevent nulls, undefined, or self-referencing loops from breaking Dagre
+                    if (parentId && String(parentId) !== "null" && String(parentId) !== String(node.id)) {
+                        initialEdges.push({
+                            id: `e-${parentId}-${node.id}`,
+                            source: String(parentId),
+                            target: String(node.id),
+                            animated: true,
+                            style: { stroke: '#333' }
+                        });
+                    }
+                });
+            }
+        });
 
-        const rawNodes = treeData.nodes.map(n => ({
-            id: String(n.id),
-            type: 'branch',
-            data: { ...n }
-        }));
+        const rawNodes = treeData.nodes.map(n => ({
+            id: String(n.id),
+            type: 'branch',
+            // Safely flatten data so the nodes are never blank
+            data: n.data ? { ...n.data } : { ...n },
+            position: n.position || { x: 0, y: 0 }
+        }));
 
-        const layouted = getLayoutedElements(rawNodes, initialEdges);
+        const layouted = getLayoutedElements(rawNodes, initialEdges);
         const hydratedNodes = hydrateNodes(layouted, initialEdges, treeData.isNew);
         
         const hydratedEdges = initialEdges.map(edge => {
@@ -244,10 +261,19 @@ export default function SkillTreeCanvas({ treeData, userXP, onBack, onSave, onOp
                               if (node.parent_ids) {
                                   node.parent_ids.forEach((pId) => {
                                       if (validNodeIds.has(String(pId)) && String(pId) !== String(node.id)) {
-                                          newEdges.push({ 
-                                            id: `e${pId}-${node.id}`, source: String(pId), target: String(node.id), type: 'default', animated: true,
-                                            style: { stroke: '#ffffff', strokeWidth: 2, opacity: 0, animation: 'fade-edge 0.5s ease-in-out forwards' }
-                                          });
+                                          // Inside your edge mapping logic...
+                                        newEdges.push({
+                                          id: `e-${parentId}-${node.id}`,
+                                          source: String(parentId),
+                                          target: String(node.id),
+                                          type: 'smoothstep', // Changes messy curves to clean, routed right-angles
+                                          pathOptions: { borderRadius: 15 }, // Softens the corners
+                                          style: { stroke: '#555', strokeWidth: 2 }, // Thicker, visible lines
+                                          markerEnd: { 
+                                            type: MarkerType.ArrowClosed, 
+                                            color: '#555' 
+                                          } // Adds the arrowhead!
+                                        });
                                       }
                                   });
                               }
@@ -281,26 +307,54 @@ export default function SkillTreeCanvas({ treeData, userXP, onBack, onSave, onOp
     });
   };
 
-  const panToColumn = (direction) => {
-    if (!rfInstance || nodes.length === 0) return;
-    const uniqueX = Array.from(new Set(nodes.map(n => n.position.x))).sort((a, b) => a - b);
-    const { x: currentViewportX, zoom } = rfInstance.getViewport();
-    const viewportWidth = document.querySelector('.react-flow')?.clientWidth || window.innerWidth;
-    const centerScreenXInGraph = (viewportWidth / 2 - currentViewportX) / zoom;
+  const handleReturnToTree = () => {
+    if (rfInstance) {
+      rfInstance.fitView({ padding: 0.2, duration: 800 });
+      setIsZoomed(false);
+    }
+  };
 
-    let targetGraphX;
-    if (direction === 'right') {
-      const nextCol = uniqueX.find(x => x > centerScreenXInGraph + 50);
-      if (nextCol !== undefined) targetGraphX = nextCol;
-      else return; 
-    } else {
-      const prevCol = [...uniqueX].reverse().find(x => x < centerScreenXInGraph - 50);
-      if (prevCol !== undefined) targetGraphX = prevCol;
-      else return; 
-    }
-    const targetViewportX = (viewportWidth / 2) - (targetGraphX * zoom);
-    rfInstance.setViewport({ x: targetViewportX, y: rfInstance.getViewport().y, zoom }, { duration: 800 });
-  };
+  const handleColumnNav = (direction) => {
+    if (!rfInstance || nodes.length === 0) return;
+
+    // 1. Group nodes by their X coordinate to identify columns
+    const columnsMap = {};
+    nodes.forEach((node) => {
+      const colX = Math.round(node.position.x);
+      if (!columnsMap[colX]) columnsMap[colX] = [];
+      columnsMap[colX].push(node);
+    });
+
+    // 2. Get sorted unique X positions
+    const sortedColXs = Object.keys(columnsMap).map(Number).sort((a, b) => a - b);
+
+    // 3. Determine next index
+    let nextIndex = currentColIndex + (direction === 'right' ? 1 : -1);
+    if (nextIndex < 0) nextIndex = 0;
+    if (nextIndex >= sortedColXs.length) nextIndex = sortedColXs.length - 1;
+    
+    setCurrentColIndex(nextIndex);
+
+    // 4. Calculate framing for the target column
+    const targetNodes = columnsMap[sortedColXs[nextIndex]];
+    const targetX = sortedColXs[nextIndex];
+    const yValues = targetNodes.map((n) => n.position.y);
+    const minY = Math.min(...yValues);
+    const maxY = Math.max(...yValues) + 120; // 120 is the node height
+
+    // 5. THE MAGIC: Zoom to fit the Column exactly from Top to Bottom
+    rfInstance.fitBounds(
+      {
+        x: targetX,
+        y: minY,
+        width: 220, 
+        height: maxY - minY,
+      },
+      { padding: 0.8, duration: 800 } // <--- Changed from 0.2 to 0.8 for breathing room
+    );
+    
+    setIsZoomed(true); // <--- Add this line so the "Return" button appears
+  };
 
   const handleLogout = () => { logout(); onBack(); };
 
@@ -362,8 +416,20 @@ export default function SkillTreeCanvas({ treeData, userXP, onBack, onSave, onOp
       {/* 2. CANVAS AREA */}
       <div style={{ flex: 1, position: 'relative', width: '100%' }}>
         <button onClick={onBack} style={{ position: 'absolute', top: '25px', left: '30px', zIndex: 100, background: 'rgba(17, 17, 17, 0.85)', border: '1px solid #333', color: '#fff', padding: '10px 20px', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold', backdropFilter: 'blur(5px)' }}>← Dashboard</button>
-        <button onClick={() => panToColumn('left')} style={{ position: 'absolute', top: '50%', left: '30px', transform: 'translateY(-50%)', zIndex: 100, background: 'rgba(17,17,17,0.8)', border: '1px solid #444', color: '#fff', fontSize: '24px', padding: '25px 15px', cursor: 'pointer', borderRadius: '12px', backdropFilter: 'blur(5px)' }}>◀</button>
-        <button onClick={() => panToColumn('right')} style={{ position: 'absolute', top: '50%', right: '30px', transform: 'translateY(-50%)', zIndex: 100, background: 'rgba(17,17,17,0.8)', border: '1px solid #444', color: '#fff', fontSize: '24px', padding: '25px 15px', cursor: 'pointer', borderRadius: '12px', backdropFilter: 'blur(5px)' }}>▶</button>
+        {/* Constant Return to Tree Button */}
+        <button 
+          onClick={handleReturnToTree} 
+          style={{ 
+            position: 'absolute', top: '25px', right: '30px', zIndex: 100, 
+            background: 'rgba(17, 17, 17, 0.85)', border: '1px solid #333', 
+            color: '#fff', padding: '10px 20px', borderRadius: '6px', 
+            cursor: 'pointer', fontWeight: 'bold', backdropFilter: 'blur(5px)' 
+          }}
+        >
+          ⛶ Return to Tree
+        </button>
+        <button onClick={() => handleColumnNav('left')} style={{ position: 'absolute', top: '50%', left: '30px', transform: 'translateY(-50%)', zIndex: 100, background: 'rgba(17,17,17,0.8)', border: '1px solid #444', color: '#fff', fontSize: '24px', padding: '25px 15px', cursor: 'pointer', borderRadius: '12px', backdropFilter: 'blur(5px)' }}>◀</button>
+        <button onClick={() => handleColumnNav('right')} style={{ position: 'absolute', top: '50%', right: '30px', transform: 'translateY(-50%)', zIndex: 100, background: 'rgba(17,17,17,0.8)', border: '1px solid #444', color: '#fff', fontSize: '24px', padding: '25px 15px', cursor: 'pointer', borderRadius: '12px', backdropFilter: 'blur(5px)' }}>▶</button>
 
         <ReactFlow 
             nodes={nodes} 
@@ -389,8 +455,15 @@ export default function SkillTreeCanvas({ treeData, userXP, onBack, onSave, onOp
         </ReactFlow>
 
         {liveActiveNode && activeNodeData && (
-          <BranchSubpage node={liveActiveNode} clickPos={activeNodeData.clickPos} onClose={() => setActiveNodeData(null)} onMarkLearned={() => handleUpdateNodeStatus(liveActiveNode.id, 'mastered')} isUnlockable={checkIsUnlockable(liveActiveNode.id, nodes, edges)} />
-        )}
+          <BranchSubpage 
+            node={liveActiveNode} 
+            clickPos={activeNodeData.clickPos} 
+            onClose={() => setActiveNodeData(null)} 
+            onMarkLearned={() => handleUpdateNodeStatus(liveActiveNode.id, 'mastered')} 
+            isUnlockable={checkIsUnlockable(liveActiveNode.id, nodes, edges)}
+            allNodes={nodes} // <--- ADD THIS LINE
+          />
+        )}
 
         {isExpanding && (
           <div style={{ position: 'absolute', bottom: '30px', right: '30px', background: '#111', border: '1px solid #333', color: '#fff', padding: '10px 20px', borderRadius: '6px', fontSize: '14px', zIndex: 10, fontWeight: 'bold' }}>
