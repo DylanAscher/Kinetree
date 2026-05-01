@@ -56,12 +56,15 @@ async def generate_tree(topic: str):
             4. 'resource_link': Provide a direct, valid URL to high-quality external learning materials (e.g., Wikipedia, official documentation for {topic}, or industry-standard tutorials). 
 
             STRUCTURE AND CONNECTION RULES:
-            You must strictly organize the nodes into 5 sequential learning columns to ensure a clean Left-to-Right user flow:
+            You must strictly organize the nodes into 5-8 sequential learning columns to ensure a clean Left-to-Right user flow. If more columns are needed, use more columns. Structure like the following:
             - Column 1 (Basics of {topic}): 1-2 nodes
-            - Column 2 (Fundamentals): 2-4 nodes
-            - Column 3 (Intermediate Techniques): 3-5 nodes
-            - Column 4 (Advanced Concepts): 2-4 nodes
-            - Column 5 (Mastery & Projects): 1-2 nodes
+            - Column 2-3 (Fundamentals): 2-4 nodes
+            - Column 4-5 (Intermediate Techniques): 3-5 nodes
+            - Column 6-7 (Advanced Concepts): 2-4 nodes
+            - Column 8 (Mastery & Projects): 1-2 nodes
+            Note: This is an 8 column example. Shorter is appreciated for specific/niche topics. Structure as you see fit.
+
+            MINIMUM: Each tree should have 20 nodes MINIMUM.
 
             CRITICAL ARCHITECTURE RULES:
             - A node in Column [X] can ONLY have parent_ids from Column [X-1]. 
@@ -107,13 +110,15 @@ async def expand_tree(topic: str, parent_id: str, start_x: int, start_y: int):
         try:
             # Overhauled Prompt for Expansion
             prompt = f"""
-            You are Kinetree. Expand the skill tree for the sub-topic "{topic}".
-            Create 3 to 5 new, hyper-specific child nodes that delve deeper into "{topic}".
+            You are Kinetree, an expert educational AI. 
+            Generate a detailed skill tree for learning: {topic}.
             
-            CRITICAL INSTRUCTIONS FOR CONTENT:
-            1. 'label': Make it highly specific and actionable.
-            2. 'description': Detail exactly WHAT they are learning and WHY. Do not be vague. 
-            3. 'resource_link': You MUST provide a REAL, highly-applicable URL to a free resource (Wikipedia, official docs, W3Schools, specific high-quality tutorials). Do NOT give a YouTube search link. Give an actual site link.
+            The user wants to learn this.
+            
+            CRITICAL RESOURCE LINK RULES:
+            Do NOT guess specific deep-page URLs. They frequently hallucinate and 404. 
+            The `resource_link` MUST be a Google Search link for high-quality written articles or documentation (e.g., "https://www.google.com/search?q=[Concept]+tutorial+for+beginners").
+            Do NOT return YouTube links here. We handle video links automatically in our UI.
             
             STRICT LAYOUT & CONNECTIONS:
             1. 'parent_ids': The very first node(s) in this new sequence MUST strictly include "{parent_id}" in their parent_ids list.

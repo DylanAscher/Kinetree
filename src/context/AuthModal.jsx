@@ -16,12 +16,23 @@ export default function AuthModal({ onClose, message }) {
     try {
       if (isLogin) {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
-        if (error) throw error;
-        onClose(); // Close modal on success
+        
+        // AUTO-RESET LOGIC: If password fails, trigger email reset
+        if (error) {
+          if (error.message === 'Invalid login credentials') {
+            await supabase.auth.resetPasswordForEmail(email);
+            throw new Error('Invalid password. For security, a recovery email has been sent to your inbox.');
+          }
+          throw error;
+        }
+        onClose(); 
       } else {
+        // SignUp now requires email confirmation per Supabase settings
         const { error } = await supabase.auth.signUp({ email, password });
         if (error) throw error;
-        onClose(); // Close modal on success
+        setError('Check your email to confirm your account before logging in.');
+        setLoading(false);
+        return; // Don't close yet, user needs to see this message
       }
     } catch (err) {
       setError(err.message);
@@ -29,6 +40,8 @@ export default function AuthModal({ onClose, message }) {
       setLoading(false);
     }
   };
+
+  // ... rest of your component rendering ...
 
   return (
     <div style={{

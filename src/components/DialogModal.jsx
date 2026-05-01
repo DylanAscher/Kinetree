@@ -1,16 +1,29 @@
-import React from 'react';
+import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom'; // <--- IMPORT PORTAL
 
 export default function DialogModal({ 
   isOpen, title, message, onConfirm, onCancel, 
   confirmText = "Okay", cancelText = "Cancel", isDanger = false 
 }) {
+  
+  // Bonus fix: Lock the background from scrolling while the modal is open
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = 'auto';
+    }
+    return () => { document.body.style.overflow = 'auto'; };
+  }, [isOpen]);
+
   if (!isOpen) return null;
 
-  return (
+  // TELEPORT THE MODAL OUT OF THE ANIMATED DASHBOARD
+  return createPortal(
     <div style={{
       position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
       backgroundColor: 'rgba(0,0,0,0.85)', display: 'flex', justifyContent: 'center',
-      alignItems: 'center', zIndex: 3000, backdropFilter: 'blur(4px)'
+      alignItems: 'center', zIndex: 9999, backdropFilter: 'blur(4px)'
     }}>
       <div style={{
         background: '#111', padding: '30px', borderRadius: '8px',
@@ -33,13 +46,15 @@ export default function DialogModal({
           )}
           <button onClick={onConfirm} style={{
               padding: '10px 20px', color: isDanger ? '#fff' : '#000', background: isDanger ? '#cc0000' : '#ededed',
-              border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold', transition: 'opacity 0.2s'
+              border: 'none', borderRadius: '6px', cursor: 'pointer', fontSize: '14px', fontWeight: 'bold',
+              transition: 'opacity 0.2s'
             }}
             onMouseEnter={(e) => e.target.style.opacity = '0.8'}
             onMouseLeave={(e) => e.target.style.opacity = '1'}
           >{confirmText}</button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body // <--- ATTACH TO BODY
   );
 }
