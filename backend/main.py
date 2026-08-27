@@ -2,7 +2,7 @@ import asyncio
 import json
 import os
 import uuid
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from google import genai
@@ -11,17 +11,26 @@ from pydantic import BaseModel
 from dotenv import load_dotenv
 
 load_dotenv()
+allowed_origins = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+    if origin.strip()
+]
+gemini_api_key = os.getenv("GEMINI_API_KEY")
+if not gemini_api_key:
+    raise RuntimeError("GEMINI_API_KEY is required")
+
 app = FastAPI()
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-client = genai.Client(api_key=os.getenv("GEMINI_API_KEY"))
+client = genai.Client(api_key=gemini_api_key)
 
 class Node(BaseModel):
     id: str
@@ -29,20 +38,19 @@ class Node(BaseModel):
     description: str
     difficulty: str
     parent_ids: list[str]
-    resource_link: str # Ensuring the AI populates this with a real URL
+    resource_link: str
 
 class SkillTree(BaseModel):
     nodes: list[Node]
 
 @app.get("/generate-tree")
-async def generate_tree(topic: str):
+async def generate_tree(topic: str = Query(..., min_length=1, max_length=200)):
     async def event_generator():
         current_model = 'gemini-3.1-flash-lite-preview'
         
         yield f"data: {json.dumps({'type': 'progress', 'model': current_model, 'message': 'Initializing Cognitive Parsing...'})}\n\n"
         
         try:
-            # Overhauled Prompt for Hyper-Specificity and Real URLs
             prompt = f"""
             ROLE: You are an expert curriculum designer and subject matter expert for: {topic}.
 
@@ -92,12 +100,10 @@ async def generate_tree(topic: str):
             raw_text = raw_text.strip()
             
             tree_data = json.loads(raw_text)
-            # --------------------------------------------------------
-
             yield f"data: {json.dumps({'type': 'success', 'data': tree_data})}\n\n"
 
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'message': f'Fatal Error: {str(e)}'})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Generation failed. Please try again.'})}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
@@ -108,7 +114,6 @@ async def expand_tree(topic: str, parent_id: str, start_x: int, start_y: int):
         yield f"data: {json.dumps({'type': 'progress', 'model': current_model, 'message': 'Synthesizing deeper knowledge...'})}\n\n"
         
         try:
-            # Overhauled Prompt for Expansion
             prompt = f"""
             You are Kinetree, an expert educational AI. 
             Generate a detailed skill tree for learning: {topic}.
@@ -142,6 +147,6 @@ async def expand_tree(topic: str, parent_id: str, start_x: int, start_y: int):
             yield f"data: {json.dumps({'type': 'success', 'data': tree_data})}\n\n"
 
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'message': f'Fatal Error: {str(e)}'})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'message': 'Expansion failed. Please try again.'})}\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")

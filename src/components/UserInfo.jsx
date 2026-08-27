@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
 
 export default function UserInfo({ onBack, onOpenPricing }) {
-  const { user, profile, updateProfile, updateAuth, supabase } = useAuth();
+  const { user, profile, updateProfile, updateAuth } = useAuth();
   
   const [activeTab, setActiveTab] = useState('profile');
   const [loading, setLoading] = useState(false);
@@ -61,22 +61,14 @@ export default function UserInfo({ onBack, onOpenPricing }) {
     try {
       const profileUpdates = {};
 
-      // 1. Handle Avatar Upload to Supabase Storage
+      // Store a small local preview for this browser session.
       if (avatarFile) {
-        const fileExt = avatarFile.name.split('.').pop();
-        const fileName = `${user.id}-${Date.now()}.${fileExt}`;
-        
-        const { error: uploadError } = await supabase.storage
-          .from('avatars')
-          .upload(fileName, avatarFile);
-
-        if (uploadError) throw new Error(`Image Upload Error: ${uploadError.message}`);
-
-        const { data: publicUrlData } = supabase.storage
-          .from('avatars')
-          .getPublicUrl(fileName);
-
-        profileUpdates.avatar_url = publicUrlData.publicUrl;
+        profileUpdates.avatar_url = await new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(new Error('Unable to read the selected image.'));
+          reader.readAsDataURL(avatarFile);
+        });
       }
 
       // 2. Check & Update Profile Data
@@ -258,7 +250,7 @@ export default function UserInfo({ onBack, onOpenPricing }) {
                 <div className="stat-row">
                   <div>
                     <div style={{ fontWeight: 'bold', fontSize: '15px' }}>Account ID</div>
-                    <div style={{ color: '#666', fontSize: '13px', marginTop: '4px' }}>Unique database identifier.</div>
+                      <div style={{ color: '#666', fontSize: '13px', marginTop: '4px' }}>Unique local profile identifier.</div>
                   </div>
                   <div style={{ fontFamily: 'monospace', fontSize: '13px', color: '#888', background: '#111', padding: '6px 10px', borderRadius: '4px' }}>{user?.id}</div>
                 </div>

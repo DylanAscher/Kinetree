@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { useAuth, supabase } from '../context/AuthContext';
+import { useAuth } from '../context/AuthContext';
 
 export default function Leaderboard({ userXP, onClose }) {
   const { user, profile } = useAuth();
@@ -25,14 +25,8 @@ export default function Leaderboard({ userXP, onClose }) {
 
   const fetchLeaderboard = async () => {
     try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('id, username, full_name, avatar_url, xp, tier'); // ADDED 'tier'
-
-      if (error) throw error;
-
-      if (data) {
-        let allPlayers = [...data];
+        const localPlayers = JSON.parse(localStorage.getItem('iterarbor_local_leaderboard') || '[]');
+        let allPlayers = [...localPlayers];
         
         if (user) {
           const userIndex = allPlayers.findIndex(p => p.id === user.id);
@@ -48,15 +42,15 @@ export default function Leaderboard({ userXP, onClose }) {
         }
         
         allPlayers.sort((a, b) => (b.xp || 0) - (a.xp || 0));
+        localStorage.setItem('iterarbor_local_leaderboard', JSON.stringify(allPlayers));
         setPlayers(allPlayers);
         
         if (user) {
           const rank = allPlayers.findIndex(p => p.id === user.id) + 1;
           setUserRank(rank);
         }
-      }
     } catch (err) {
-      console.error("Error fetching leaderboard:", err);
+      console.error('Unable to load local leaderboard:', err);
     } finally {
       setLoading(false);
     }

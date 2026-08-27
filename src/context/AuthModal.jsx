@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
-import { supabase } from './AuthContext'; 
+import { useAuth } from './AuthContext';
 
 export default function AuthModal({ onClose, message }) {
+  const { login } = useAuth();
   const [isLogin, setIsLogin] = useState(true);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -15,24 +16,17 @@ export default function AuthModal({ onClose, message }) {
 
     try {
       if (isLogin) {
-        const { error } = await supabase.auth.signInWithPassword({ email, password });
+        const { error } = await login(email, password);
         
-        // AUTO-RESET LOGIC: If password fails, trigger email reset
-        if (error) {
-          if (error.message === 'Invalid login credentials') {
-            await supabase.auth.resetPasswordForEmail(email);
-            throw new Error('Invalid password. For security, a recovery email has been sent to your inbox.');
-          }
-          throw error;
-        }
+        if (error) throw error;
         onClose(); 
       } else {
-        // SignUp now requires email confirmation per Supabase settings
-        const { error } = await supabase.auth.signUp({ email, password });
+        const { error } = await login(email, password);
         if (error) throw error;
-        setError('Check your email to confirm your account before logging in.');
+        setError('Demo account created. You are now signed in.');
         setLoading(false);
-        return; // Don't close yet, user needs to see this message
+        onClose();
+        return;
       }
     } catch (err) {
       setError(err.message);
@@ -40,8 +34,6 @@ export default function AuthModal({ onClose, message }) {
       setLoading(false);
     }
   };
-
-  // ... rest of your component rendering ...
 
   return (
     <div style={{

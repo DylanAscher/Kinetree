@@ -7,11 +7,11 @@
     "dev": "concurrently \"npm run dev-vite\" \"npm run dev-python\"",
     "dev-vite": "vite",
     "dev-python": "cd backend && python -m uvicorn main:app --reload",
+    "lint": "eslint .",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.103.3",
     "canvas-confetti": "^1.9.4",
     "dagre": "^0.8.5",
     "react": "^19.2.4",

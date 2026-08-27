@@ -6,6 +6,8 @@ import Branch from './Branch';
 import BranchSubpage from './BranchSubpage';
 import { useAuth } from '../context/AuthContext';
 
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
 const nodeTypes = { branch: Branch };
 const nodeWidth = 220; 
 const nodeHeight = 120; 
@@ -285,7 +287,7 @@ export default function SkillTreeCanvas({ treeData, userXP, onBack, onSave, onOp
     if (isExpanding) return; 
     setIsExpanding(true);
     try {
-      const response = await fetch(`http://localhost:8000/expand-tree?topic=${encodeURIComponent(nodeTopic)}&parent_id=${parentId}&start_x=${startX}&start_y=${startY}`);
+      const response = await fetch(`${API_BASE_URL}/expand-tree?topic=${encodeURIComponent(nodeTopic)}&parent_id=${parentId}&start_x=${startX}&start_y=${startY}`);
       if (!response.ok) return;
       const reader = response.body.getReader();
       const decoder = new TextDecoder();
@@ -358,11 +360,12 @@ export default function SkillTreeCanvas({ treeData, userXP, onBack, onSave, onOp
                           return prevNodes;
                         });
                     }
-                } catch (e) {}
+                } catch (e) { console.error('Invalid expansion response:', e); }
             }
         }
       }
     } catch (err) {
+      console.error('Failed to expand tree:', err);
     } finally {
       setIsExpanding(false);
     }

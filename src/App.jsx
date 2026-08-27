@@ -1,14 +1,17 @@
-import React, { useState, useEffect } from 'react';
+import React, { lazy, Suspense, useState, useEffect } from 'react';
 import Dashboard from './components/Dashboard';
-import SkillTreeCanvas from './components/SkillTreeCanvas';
 import GeneratePopup from './components/GeneratePopup';
 import AuthModal from './context/AuthModal'; 
 import Leaderboard from './components/Leaderboard'; 
 import DialogModal from './components/DialogModal'; 
 import LandingPage from './components/LandingPage';
 import Pricing from './components/Pricing'; 
-import UserInfo from './components/UserInfo'; // NEW IMPORT
-import { useAuth, supabase } from './context/AuthContext'; 
+import UserInfo from './components/UserInfo';
+import { useAuth } from './context/AuthContext';
+
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const LOCAL_TREES_KEY = 'iterarbor_local_trees';
+const SkillTreeCanvas = lazy(() => import('./components/SkillTreeCanvas'));
 
 export default function App() {
   const { user, profile, addXP } = useAuth(); 
@@ -35,6 +38,12 @@ export default function App() {
 
   const [mousePos, setMousePos] = useState({ x: -1000, y: -1000 }); 
 
+  const handleAuthClose = () => {
+    setShowLogin(false);
+    setAuthMessage('');
+    setCurrentView('dashboard');
+  };
+
   useEffect(() => {
     document.body.style.margin = '0';
     document.body.style.padding = '0';
@@ -53,30 +62,16 @@ export default function App() {
     refreshSavedTrees();
   }, [user]);
 
-  const refreshSavedTrees = async () => {
-    if (!user || user.id === 'guest') {
-      setSavedTrees([]);
-      return;
-    }
-    const { data, error } = await supabase.from('trees').select('*').eq('user_id', user.id).order('created_at', { ascending: false });
-    if (!error && data) {
-      const formattedTrees = data.map(dbTree => {
-        const nodes = typeof dbTree.nodes === 'string' ? JSON.parse(dbTree.nodes) : dbTree.nodes;
-        const edges = typeof dbTree.edges === 'string' ? JSON.parse(dbTree.edges) : dbTree.edges;
-        return {
-          ...dbTree, nodes, edges,
-          dateCreated: new Date(dbTree.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-        };
-      });
-      setSavedTrees(formattedTrees);
-    }
+  const refreshSavedTrees = () => {
+    const storedTrees = JSON.parse(localStorage.getItem(LOCAL_TREES_KEY) || '[]');
+    setSavedTrees(user && user.id !== 'guest' ? storedTrees : []);
   };
 
   const handleGenerateTree = (topic) => {
   setGeneratingTopic(topic);
   setLoading(true);
   setProgressMessage("Initializing Cognitive Parsing...");
-  const eventSource = new EventSource(`http://localhost:8000/generate-tree?topic=${encodeURIComponent(topic)}`);
+  const eventSource = new EventSource(`${API_BASE_URL}/generate-tree?topic=${encodeURIComponent(topic)}`);
   eventSource.onmessage = (event) => {
     try {
       const parsedData = JSON.parse(event.data);
@@ -87,7 +82,6 @@ export default function App() {
       }
       else if (parsedData.type === 'success') {
             
-            // 1. Pre-calculate the edges so Supabase has them
             const generatedNodes = parsedData.data.nodes;
             const generatedEdges = [];
             
@@ -105,31 +99,17 @@ export default function App() {
               }
             });
 
-            // 2. Build the full tree object
             const newTree = {
               id: crypto.randomUUID(),
               topic: topic,
               date: new Date().toLocaleDateString(),
               nodes: generatedNodes,
-              edges: generatedEdges, // <-- We now have edges!
+              edges: generatedEdges,
             };
 
             const updatedTrees = [newTree, ...savedTrees];
             setSavedTrees(updatedTrees);
-            localStorage.setItem('kinetree_saved', JSON.stringify(updatedTrees));
-
-            if (isLoggedIn) {
-              // 3. Send EVERYTHING to Supabase to satisfy the strict schema
-              supabase.from('trees').insert([{ 
-                id: newTree.id, 
-                user_id: user.id, 
-                topic: newTree.topic, 
-                data: newTree,
-                nodes: newTree.nodes,
-                edges: newTree.edges // <-- Sent to Database!
-              }])
-              .then(({error}) => { if(error) console.error("Supabase Save Error:", error); });
-            }
+            localStorage.setItem(LOCAL_TREES_KEY, JSON.stringify(updatedTrees));
 
             setActiveTree(newTree); 
             setCurrentView('tree'); 
@@ -142,7 +122,6 @@ export default function App() {
         eventSource.close();
       }
     } catch (err) {
-      // THIS PREVENTS FUTURE BRICKING!
       console.error("Failed to process server response:", err);
       alert("The AI returned an invalid response. Please try again.");
       setLoading(false); 
@@ -151,11 +130,10 @@ export default function App() {
   };
 
   eventSource.onerror = () => {
-    // --- THE FIX: Catch network/connection errors ---
     console.error("EventSource failed.");
     alert("Lost connection to the server.");
-    setGeneratingTopic  (false); // Force close the popup!
-    eventSource.close();    // Kill connection
+    setGeneratingTopic(false);
+    eventSource.close();
   };
 };
 
@@ -169,19 +147,13 @@ export default function App() {
     
     const freshNodes = nodes.map(n => ({ ...n, data: { ...n.data, status: 'locked' } }));
     
-    const newTreeData = { user_id: user.id, topic: existingTree.topic, nodes: freshNodes, edges: edges };
-    const { data: insertedTree, error } = await supabase.from('trees').insert([newTreeData]).select().single();
-
-    if (!error && insertedTree) {
-        const formattedTreeToOpen = {
-            ...insertedTree, nodes: freshNodes, edges: edges,
-            dateCreated: new Date(insertedTree.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }),
-            isNew: true 
-        };
-        setSavedTrees(prev => [formattedTreeToOpen, ...prev]);
-        setActiveTree(formattedTreeToOpen);
-        setCurrentView('tree');
-    }
+    const newTreeData = { id: crypto.randomUUID(), topic: existingTree.topic, nodes: freshNodes, edges };
+    const formattedTreeToOpen = { ...newTreeData, dateCreated: new Date().toLocaleDateString(), isNew: true };
+    const updatedTrees = [formattedTreeToOpen, ...savedTrees];
+    setSavedTrees(updatedTrees);
+            localStorage.setItem(LOCAL_TREES_KEY, JSON.stringify(updatedTrees));
+    setActiveTree(formattedTreeToOpen);
+    setCurrentView('tree');
     setLoading(false);
   };
 
@@ -194,7 +166,7 @@ export default function App() {
     
     try {
       const enhancedTopic = `${topic} (Target Audience: ${skillLevel})`;
-      const response = await fetch(`http://localhost:8000/generate-tree?topic=${encodeURIComponent(enhancedTopic)}`);
+      const response = await fetch(`${API_BASE_URL}/generate-tree?topic=${encodeURIComponent(enhancedTopic)}`);
       
       if (!response.ok) throw new Error("Network response error");
 
@@ -253,9 +225,8 @@ export default function App() {
                             }
                         });
                         
-                        const newTreeData = { user_id: user.id, topic: topic, nodes: formattedNodes, edges: formattedEdges };
-                        const { data: insertedTree } = await supabase.from('trees').insert([newTreeData]).select().single();
-                        const treeToOpen = insertedTree || { id: `temp-${Date.now()}`, ...newTreeData, created_at: new Date().toISOString() };
+                        const newTreeData = { id: crypto.randomUUID(), topic, nodes: formattedNodes, edges: formattedEdges };
+                        const treeToOpen = { ...newTreeData, created_at: new Date().toISOString() };
 
                         const formattedTreeToOpen = {
                           ...treeToOpen, nodes: formattedNodes, edges: formattedEdges,
@@ -263,15 +234,16 @@ export default function App() {
                         };
 
                         setSavedTrees(prev => [formattedTreeToOpen, ...prev]);
+                        localStorage.setItem(LOCAL_TREES_KEY, JSON.stringify([formattedTreeToOpen, ...savedTrees]));
                         setActiveTree(formattedTreeToOpen);
                         setCurrentView('tree'); 
                         setLoading(false);
                     }
-                } catch (e) { }
+                } catch (e) { console.error('Invalid generation response:', e); }
             }
         }
       }
-    } catch (err) {
+    } catch {
       setError("Failed to reach local API.");
       setLoading(false);
     }
@@ -281,16 +253,12 @@ export default function App() {
     setActiveTree(updatedTree);
     setSavedTrees(prev => prev.map(t => t.id === updatedTree.id ? updatedTree : t));
 
-    if (user && user.id !== 'guest') {
-      await supabase.from('trees').update({ nodes: updatedTree.nodes, edges: updatedTree.edges }).eq('id', updatedTree.id);
-    }
+    localStorage.setItem(LOCAL_TREES_KEY, JSON.stringify(savedTrees.map(tree => tree.id === updatedTree.id ? updatedTree : tree)));
   };
 
   const handleDeleteTree = async (treeId) => {
     setSavedTrees(prev => prev.filter(t => t.id !== treeId));
-    if (user && user.id !== 'guest') {
-      await supabase.from('trees').delete().eq('id', treeId);
-    }
+    localStorage.setItem(LOCAL_TREES_KEY, JSON.stringify(savedTrees.filter(tree => tree.id !== treeId)));
   };
 
   return (
@@ -300,7 +268,6 @@ export default function App() {
       <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', pointerEvents: 'none', zIndex: -2, backgroundImage: 'radial-gradient(rgba(255, 255, 255, 0.05) 1px, transparent 1px)', backgroundSize: '24px 24px' }} />
       <div style={{ position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh', pointerEvents: 'none', zIndex: -1, backgroundImage: 'radial-gradient(rgba(255, 255, 255, 0.15) 1px, transparent 1px)', backgroundSize: '24px 24px', maskImage: `radial-gradient(circle 300px at ${mousePos.x}px ${mousePos.y}px, black 0%, transparent 100%)`, WebkitMaskImage: `radial-gradient(circle 300px at ${mousePos.x}px ${mousePos.y}px, black 0%, transparent 100%)` }} />
 
-      {/* NEW ROUTING LOGIC */}
       {currentView === 'userInfo' ? (
         <UserInfo onBack={() => setCurrentView('dashboard')} onOpenPricing={() => setShowPricing(true)} />
       ) : currentView === 'landing' ? (
@@ -333,21 +300,27 @@ export default function App() {
       ) : null}
       
       {currentView === 'tree' && activeTree && (
-        <SkillTreeCanvas 
-          treeData={activeTree} userXP={userXP}
-          onBack={() => { setActiveTree(null); setCurrentView('dashboard'); }}
-          onSave={handleUpdateActiveTree}
-          onOpenLogin={(msg) => { setAuthMessage(typeof msg === 'string' ? msg : ""); setShowLogin(true); }}
-          onOpenLeaderboard={() => setShowLeaderboard(true)}
-          onOpenPricing={() => setShowPricing(true)}
-          onOpenUserInfo={() => setCurrentView('userInfo')}
-        />
+        <Suspense fallback={<div style={{ minHeight: '100vh', display: 'grid', placeItems: 'center', color: '#aaa' }}>Loading skill tree...</div>}>
+          <SkillTreeCanvas 
+            treeData={activeTree} userXP={userXP}
+            onBack={() => { setActiveTree(null); setCurrentView('dashboard'); }}
+            onSave={handleUpdateActiveTree}
+            onOpenLogin={(msg) => { setAuthMessage(typeof msg === 'string' ? msg : ""); setShowLogin(true); }}
+            onOpenLeaderboard={() => setShowLeaderboard(true)}
+            onOpenPricing={() => setShowPricing(true)}
+            onOpenUserInfo={() => setCurrentView('userInfo')}
+          />
+        </Suspense>
       )}
 
       {loading && <GeneratePopup topic={generatingTopic} model={currentModel} progressMessage={progressMessage} />}
-      {showLogin && <AuthModal message={authMessage} onClose={() => setShowLogin(false)} />}
+      {showLogin && <AuthModal message={authMessage} onClose={handleAuthClose} />}
       {showLeaderboard && <Leaderboard userXP={userXP} onClose={() => setShowLeaderboard(false)} />}
       {showPricing && <Pricing onClose={() => setShowPricing(false)} onOpenLogin={(msg) => { setAuthMessage(msg); setShowLogin(true); }} />}
+
+      <div style={{ position: 'fixed', bottom: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 20, width: 'min(90vw, 760px)', padding: '8px 14px', border: '1px solid rgba(255,255,255,0.16)', borderRadius: '6px', background: 'rgba(5,5,5,0.88)', color: '#aaa', textAlign: 'center', fontSize: '11px', letterSpacing: '0.04em', pointerEvents: 'none' }}>
+        Portfolio demo and work in progress. This is a mock website; features and generated content are for demonstration.
+      </div>
       
       <DialogModal {...dialogConfig} />
     </div>

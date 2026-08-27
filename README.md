@@ -1,21 +1,47 @@
 # IterArbor
-An AI-powered skill tree website to hone skills.
 
-# React + Vite
+IterArbor generates visual learning paths with Gemini and lets users save and expand their skill trees locally in the browser.
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+## Requirements
 
-Currently, two official plugins are available:
+- Node.js 20 or newer
+- Python 3.10 or newer
+- A Google Gemini API key
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+## Setup
 
-## React Compiler
+1. Install frontend dependencies:
 
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
+   ```powershell
+   npm install
+   ```
 
-Note: This will impact Vite dev & build performances.
+2. Install backend dependencies:
 
-## Expanding the ESLint configuration
+   ```powershell
+   python -m venv .venv
+   .\.venv\Scripts\Activate.ps1
+   pip install -r backend/requirements.txt
+   ```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+3. Copy `.env.example` to `.env`. Copy `backend/.env.example` to `backend/.env` and add the Gemini key. Keep both `.env` files private.
+
+4. User accounts, profiles, avatars, leaderboard entries, and skill trees are stored locally in the browser for this portfolio prototype.
+
+5. Start the frontend and backend together:
+
+   ```powershell
+   npm run dev
+   ```
+
+The frontend runs at `http://localhost:5173` and the API at `http://localhost:8000`.
+
+## Checks
+
+```powershell
+npm run lint
+npm run build
+python -m compileall -q backend
+```
+
+Set `VITE_API_URL` to the deployed API origin and `ALLOWED_ORIGINS` to a comma-separated list of deployed frontend origins in production.

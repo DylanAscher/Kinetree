@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { useAuth, supabase } from '../context/AuthContext';
+import { useAuth } from '../context/AuthContext';
 
 export default function Pricing({ onClose, onOpenLogin, onUpgrade }) {
-  const { user, profile, setProfile } = useAuth();
+  const { user, profile, setProfile, updateProfile } = useAuth();
   const [mounted, setMounted] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
 
@@ -27,20 +27,8 @@ export default function Pricing({ onClose, onOpenLogin, onUpgrade }) {
       setTimeout(() => onOpenLogin("Create an account to lock in your upgrade."), 350);
     } else {
       try {
-        const { error } = await supabase
-          .from('profiles')
-          .update({ tier: tier }) 
-          .eq('id', user.id);
-          
-        if (error) {
-          console.error("Error updating tier:", error);
-          alert("Failed to update tier in database. Does the 'tier' column exist?");
-          return;
-        }
-
-        if (setProfile) {
-          setProfile({ ...profile, tier: tier });
-        }
+        if (setProfile) setProfile({ ...profile, tier });
+        await updateProfile({ tier });
 
         alert(`Mock Checkout Successful! You have unlocked the ${tier} tier.`);
         if (onUpgrade) onUpgrade(tier);
@@ -141,7 +129,7 @@ export default function Pricing({ onClose, onOpenLogin, onUpgrade }) {
             <h3 style={{ margin: '0 0 10px 0', fontSize: '18px', fontWeight: 'bold' }}>Free</h3>
             <div style={{ fontSize: '28px', fontWeight: '900', marginBottom: '20px' }}>$0 <span style={{ fontSize: '14px', color: '#666', fontWeight: 'normal' }}>/ mo</span></div>
             <p style={{ color: '#888', fontSize: '13px', lineHeight: '1.5', marginBottom: '25px', minHeight: '40px' }}>
-              Just enough compute to realize you've been learning wrong your whole life.
+              Just enough information to realize you've been learning wrong your whole life.
             </p>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', marginBottom: '30px', flexGrow: 1, fontSize: '13px', color: '#ccc' }}>
               <div><span className="feature-check">✓</span> Limit 3 Skill Trees</div>

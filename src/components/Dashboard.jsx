@@ -96,10 +96,8 @@ export default function Dashboard({ savedTrees = [], userXP, onOpenTree, onOpenL
         isDanger={true}
       />
 
-      {/* FIXED: Modal now renders here */}
       {showFeedback && <FeedbackModal onClose={() => setShowFeedback(false)} />}
 
-      {/* FULL WIDTH NAVBAR */}
       <div style={{ 
         background: '#000', borderBottom: '1px solid #222', padding: '30px 50px', 
         width: '100%', boxSizing: 'border-box', flexShrink: 0, zIndex: 100 
@@ -150,10 +148,8 @@ export default function Dashboard({ savedTrees = [], userXP, onOpenTree, onOpenL
         </header>
       </div>
 
-      {/* MAIN CONTENT AREA */}
       <div style={{ flex: 1, padding: '40px 50px 50px 50px', maxWidth: '1400px', margin: '0 auto', width: '100%', boxSizing: 'border-box' }}>
         
-        {/* GENERATION BAR */}
         <div style={{ 
           background: 'rgba(17, 17, 17, 0.7)', border: '1px solid #333', 
           padding: '60px', borderRadius: '16px', marginBottom: '40px', textAlign: 'center', 
@@ -171,7 +167,6 @@ export default function Dashboard({ savedTrees = [], userXP, onOpenTree, onOpenL
               style={{ flex: 1, padding: '20px 30px', background: '#0a0a0a', border: '1px solid #444', color: '#fff', borderRadius: '10px', fontSize: '22px', outline: 'none' }}
             />
 
-            {/* CUSTOM DESIGN DROPDOWN */}
             <div ref={dropdownRef} style={{ position: 'relative', width: '300px' }}>
               <div 
                 onClick={() => setIsDropdownOpen(!isDropdownOpen)}
@@ -218,7 +213,6 @@ export default function Dashboard({ savedTrees = [], userXP, onOpenTree, onOpenL
           </div>
         </div>
 
-        {/* SAVED TREES GRID */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #333', paddingBottom: '15px' }}>
           <h3 style={{ margin: 0, fontSize: '22px' }}>Saved Trees</h3>
           <input 
@@ -262,7 +256,6 @@ export default function Dashboard({ savedTrees = [], userXP, onOpenTree, onOpenL
           )}
         </div>
 
-        {/* FOOTER SECTION */}
         <footer>
           <div style={{ marginTop: 'auto', textAlign: 'center', paddingTop: '40px', paddingBottom: '10px' }}>
             <p style={{ color: '#555', fontSize: '14px', margin: '0 0 10px 0' }}>© {new Date().getFullYear()} KINETREE. ALL RIGHTS RESERVED.</p>

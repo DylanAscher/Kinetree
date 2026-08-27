@@ -35,14 +35,14 @@ const previewThemes = [
 ];
 
 const footerMessages = [
-  "© 2026 KINETREE. WE FED THE AI COFFEE AND IT BUILT THIS.",
-  "© 2026 KINETREE. PLEASE DON'T SUE US, GOOGLE.",
-  "© 2026 KINETREE. WE MADE THIS IN A MONSTER ENERGY FUELED RAMPAGE.",
-  "© 2026 KINETREE. ALL RIGHTS RESERVED, INCLUDING THE RIGHT TO COMPLAIN ABOUT THIS COPYRIGHT NOTICE.",
-  "© 2026 KINETREE. THIS PRODUCT IS PROTECTED BY INTERNATIONAL COPYRIGHT LAWS AND WE'RE TOO LAZY TO ENFORCE THEM.",
-  "© 2026 KINETREE. how to use react to make an ai skill tree si oh shit this isnt google my bad",
-  "© 2026 KINETREE. If you're seeing this, listen to Since I Left You by The Avalances. Great Album.",
-  "© 2026 KINETREE. WANT TO SUPPORT US? UPGRADE YOUR ACCOUNT. DON'T WANT TO SUPPORT US? ...YOU'RE THE ONE ON OUR SITE."
+  "© 2026 KINETREE. Built as a thoughtful learning experiment.",
+  "© 2026 KINETREE. Designed for curious minds and practical progress.",
+  "© 2026 KINETREE. A small project with room to grow.",
+  "© 2026 KINETREE. Clear paths for ambitious learning goals.",
+  "© 2026 KINETREE. Built with care for independent learners.",
+  "© 2026 KINETREE. Turn curiosity into a plan.",
+  "© 2026 KINETREE. Explore a new way to organize learning.",
+  "© 2026 KINETREE. Keep learning, one branch at a time."
 ];
 
 const promptRow1 = ["Python", "Photography", "Quantum Physics", "Linear Algebra", "FL Studio", "Touch Typing", "Sourdough Bread", "Machine Learning"];
@@ -135,6 +135,11 @@ export default function LandingPage({ onOpenLogin, onOpenPricing, onGoToDashboar
   const [footerText, setFooterText] = useState(footerMessages[0]);
   const [showFeedback, setShowFeedback] = useState(false);
   const [processStep, setProcessStep] = useState(0);
+
+  const openFeedback = () => {
+    window.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+    requestAnimationFrame(() => setShowFeedback(true));
+  };
 
   useEffect(() => {
     setTheme(previewThemes[Math.floor(Math.random() * previewThemes.length)]);
@@ -545,12 +550,12 @@ export default function LandingPage({ onOpenLogin, onOpenPricing, onGoToDashboar
         <div style={{ textAlign: 'center', padding: '20px 0 20px 0', position: 'relative', zIndex: 10 }}>
           
           <button 
-            onClick={() => setShowFeedback(true)} 
+            onClick={openFeedback}
             style={{ background: 'none', border: 'none', color: '#888', textDecoration: 'underline', cursor: 'pointer', fontSize: '14px', transition: 'color 0.2s' }}
             onMouseEnter={e => e.target.style.color = '#ededed'} 
             onMouseLeave={e => e.target.style.color = '#888'}
           >
-            Yell at the Developer (Feedback)
+            Give Feedback
           </button>
 
         </div>
