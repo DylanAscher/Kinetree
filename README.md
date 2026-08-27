@@ -1,6 +1,6 @@
-# IterArbor
+# Kinetree
 
-IterArbor generates visual learning paths with Gemini and lets users save and expand their skill trees locally in the browser.
+Kinetree generates visual learning paths with Gemini and lets users save and expand their skill trees locally in the browser.
 
 ## Requirements
 
